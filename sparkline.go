@@ -21,12 +21,9 @@ func getSparkline(history []Sample, width int, delay float64, zoom int, now, sam
 		return
 	}
 
-	// At zoom 1x, ensure we don't have higher horizontal resolution than the switch can provide.
-	effectiveDelay := delay
-	if zoom == 1 {
-		effectiveDelay = math.Max(delay, sampleInterval)
-	}
-	pixelSec := effectiveDelay * float64(zoom)
+	// USE GLOBAL UNIFIED TIME STEP FOR VERTICAL ALIGNMENT.
+	// One pixel MUST represent the same amount of time for all rows.
+	pixelSec := delay * float64(zoom)
 	startTime := now - float64(width)*pixelSec
 
 	// Build buckets: aligned time slot → max value in that slot.
@@ -198,6 +195,7 @@ func getNumericHistory(history []Sample, now float64, width int, delay float64, 
 	}
 	colW := 9
 	numCols := width / colW
+	// USE GLOBAL UNIFIED TIME STEP FOR VERTICAL ALIGNMENT.
 	pixelSec := delay * float64(zoom)
 
 	var sb strings.Builder

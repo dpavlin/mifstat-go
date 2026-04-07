@@ -10,17 +10,21 @@ import (
 	"github.com/gosnmp/gosnmp"
 )
 
-// runBenchmark polls all switches once concurrently and prints a timing table.
+// runBenchmark polls all switches multiple times concurrently and prints a timing table.
 func runBenchmark(switches []map[string]string, sem chan struct{}) {
+	const iterations = 5
+	type stats struct {
+		min, max, total int64
+		samples         []int64
+	}
 	type Result struct {
 		IP, Name   string
 		Status     string
-		SemWaitMs  int64 // time waiting for semaphore slot
-		SnmpMs     int64 // actual SNMP work time (connect + walk)
+		Snmp       stats
+		SemWait    stats
 		PhysPorts  int
 		IfaceCount int
 		OIDRows    int
-		OIDErrors  int
 	}
 
 	results := make([]Result, len(switches))
@@ -31,56 +35,67 @@ func runBenchmark(switches []map[string]string, sem chan struct{}) {
 		wg.Add(1)
 		go func(i int, sw map[string]string) {
 			defer wg.Done()
-			r := Result{IP: sw["ip"], Name: sw["name"]}
+			r := Result{IP: sw["ip"], Name: sw["name"], Status: "OK"}
+			r.Snmp.min = 99999
+			r.SemWait.min = 99999
 
-			t0 := time.Now()
-			sem <- struct{}{}
-			r.SemWaitMs = time.Since(t0).Milliseconds()
+			for iter := 0; iter < iterations; iter++ {
+				t0 := time.Now()
+				sem <- struct{}{}
+				waitMs := time.Since(t0).Milliseconds()
+				r.SemWait.total += waitMs
+				r.SemWait.samples = append(r.SemWait.samples, waitMs)
+				if waitMs < r.SemWait.min { r.SemWait.min = waitMs }
+				if waitMs > r.SemWait.max { r.SemWait.max = waitMs }
 
-			tSnmp := time.Now()
-			conn := &gosnmp.GoSNMP{
-				Target:         sw["ip"],
-				Port:           161,
-				Community:      snmpCommunity,
-				Version:        gosnmp.Version2c,
-				Timeout:        3 * time.Second,
-				Retries:        0,
-				MaxRepetitions: 20,
-			}
-			if err := conn.Connect(); err != nil {
-				r.Status = "CONN_ERR"
-				r.SnmpMs = time.Since(tSnmp).Milliseconds()
-				<-sem
-				results[i] = r
-				return
-			}
-
-			portTypes := map[int]int{}
-			if pdus, err := conn.BulkWalkAll(OID_IFNAME); err == nil {
-				r.IfaceCount = len(pdus)
-			}
-			if pdus, err := conn.BulkWalkAll(OID_IFTYPE); err == nil {
-				for _, pdu := range pdus {
-					if idx, ok := oidIndex(pdu.Name, OID_IFTYPE); ok {
-						portTypes[idx] = int(snmpUint64(pdu))
-					}
+				tSnmp := time.Now()
+				conn := &gosnmp.GoSNMP{
+					Target:         sw["ip"],
+					Port:           161,
+					Community:      snmpCommunity,
+					Version:        gosnmp.Version2c,
+					Timeout:        3 * time.Second,
+					Retries:        0,
+					MaxRepetitions: 20,
 				}
-				r.PhysPorts = countPhys(portTypes)
-			}
+				if err := conn.Connect(); err != nil {
+					r.Status = "CONN_ERR"
+					<-sem
+					break
+				}
 
-			tables, _ := bulkWalkMulti(conn, metricOIDs, 20)
-			conn.Conn.Close()
-			<-sem
+				if iter == 0 {
+					pdus, _ := conn.BulkWalkAll(OID_IFNAME)
+					r.IfaceCount = len(pdus)
+					pdus, _ = conn.BulkWalkAll(OID_IFTYPE)
+					portTypes := map[int]int{}
+					for _, pdu := range pdus {
+						if idx, ok := oidIndex(pdu.Name, OID_IFTYPE); ok {
+							portTypes[idx] = int(snmpUint64(pdu))
+						}
+					}
+					r.PhysPorts = countPhys(portTypes)
+				}
 
-			r.SnmpMs = time.Since(tSnmp).Milliseconds()
-			if rows := len(tables[OID_HCIN]); rows == 0 {
-				r.OIDErrors++
-			} else {
-				r.OIDRows = rows
-			}
-			r.Status = "OK"
-			if r.OIDErrors > 0 {
-				r.Status = fmt.Sprintf("PARTIAL(%d)", r.OIDErrors)
+				tables, err := bulkWalkMulti(conn, metricOIDs, 20)
+				conn.Conn.Close()
+				<-sem
+
+				if err != nil {
+					r.Status = "WALK_ERR"
+					break
+				}
+				
+				snmpMs := time.Since(tSnmp).Milliseconds()
+				r.Snmp.total += snmpMs
+				r.Snmp.samples = append(r.Snmp.samples, snmpMs)
+				if snmpMs < r.Snmp.min { r.Snmp.min = snmpMs }
+				if snmpMs > r.Snmp.max { r.Snmp.max = snmpMs }
+				r.OIDRows = len(tables[OID_HCIN])
+				
+				if iter < iterations-1 {
+					time.Sleep(100 * time.Millisecond)
+				}
 			}
 			results[i] = r
 		}(i, sw)
@@ -88,55 +103,26 @@ func runBenchmark(switches []map[string]string, sem chan struct{}) {
 	wg.Wait()
 	wall := time.Since(wallStart)
 
-	sort.Slice(results, func(i, j int) bool { return results[i].SnmpMs > results[j].SnmpMs })
+	sort.Slice(results, func(i, j int) bool { return results[i].Snmp.total > results[j].Snmp.total })
 
-	// Dynamic column widths for bench output.
-	bwIP, bwName, bwStatus := len("IP"), len("Name"), len("Status")
+	bwIP, bwName, bwStatus := 12, 15, 8
 	for _, r := range results {
-		if l := len(r.IP); l > bwIP {
-			bwIP = l
-		}
-		if l := len(r.Name); l > bwName {
-			bwName = l
-		}
-		if l := len(r.Status); l > bwStatus {
-			bwStatus = l
-		}
+		if len(r.IP) > bwIP { bwIP = len(r.IP) }
+		if len(r.Name) > bwName { bwName = len(r.Name) }
 	}
-	sepW := bwIP + 1 + bwName + 1 + bwStatus + 1 + 7 + 1 + 7 + 1 + 5 + 1 + 6 + 1 + 7
 
-	fmt.Printf("Benchmark: %d switches | wall: %v | semaphore: 50 | multi-OID GETBULK\n\n",
-		len(switches), wall.Round(time.Millisecond))
-	fmt.Printf("%-*s %-*s %-*s %7s %7s %5s %6s %7s\n",
+	fmt.Printf("Benchmark: %d switches | samples: %d | wall: %v | semaphore: 50\n\n",
+		len(switches), iterations, wall.Round(time.Millisecond))
+	fmt.Printf("%-*s %-*s %-*s %7s %7s %7s %5s %6s\n",
 		bwIP, "IP", bwName, "Name", bwStatus, "Status",
-		"SnmpMs", "SemMs", "Phys", "Ifaces", "HCinRows")
-	fmt.Println(strings.Repeat("-", sepW))
+		"AvgMs", "MaxMs", "Jitter", "Phys", "Ifaces")
+	fmt.Println(strings.Repeat("-", bwIP+bwName+bwStatus+1+7+1+7+1+7+1+5+1+6+5))
 
-	okCount, errCount := 0, 0
-	var totalSnmp, maxSnmp, totalSem, maxSem int64
 	for _, r := range results {
-		if r.Status == "OK" {
-			okCount++
-		} else {
-			errCount++
-		}
-		totalSnmp += r.SnmpMs
-		totalSem += r.SemWaitMs
-		if r.SnmpMs > maxSnmp {
-			maxSnmp = r.SnmpMs
-		}
-		if r.SemWaitMs > maxSem {
-			maxSem = r.SemWaitMs
-		}
-		fmt.Printf("%-*s %-*s %-*s %7d %7d %5d %6d %7d\n",
+		avg := r.Snmp.total / iterations
+		jitter := r.Snmp.max - r.Snmp.min
+		fmt.Printf("%-*s %-*s %-*s %7d %7d %7d %5d %6d\n",
 			bwIP, r.IP, bwName, r.Name, bwStatus, r.Status,
-			r.SnmpMs, r.SemWaitMs, r.PhysPorts, r.IfaceCount, r.OIDRows)
+			avg, r.Snmp.max, jitter, r.PhysPorts, r.IfaceCount)
 	}
-	fmt.Println(strings.Repeat("-", sepW))
-	n := int64(len(results))
-	fmt.Printf("Summary: %d OK, %d failed | snmp avg/max: %d/%dms | sem avg/max: %d/%dms | wall: %v\n",
-		okCount, errCount,
-		totalSnmp/n, maxSnmp,
-		totalSem/n, maxSem,
-		wall.Round(time.Millisecond))
 }

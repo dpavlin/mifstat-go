@@ -135,10 +135,11 @@ func TestGetSparklineStatus(t *testing.T) {
 }
 
 func TestGetSparklineAdaptiveGap(t *testing.T) {
-	// Simulate global -d 1 but switch is actually responding every 2s
+	// Global delay 1 but switch responds every 2s
 	delay := 1.0
 	sampleInterval := 2.0
 	now := 1000.0
+	// Provide samples that cross multiple 1s pixels.
 	history := []Sample{
 		{TS: 980.0, Val: 10.0},
 		{TS: 982.0, Val: 10.0},
@@ -161,8 +162,10 @@ func TestGetSparklineAdaptiveGap(t *testing.T) {
 	}
 	
 	dataPart := res[first : last+1]
+	// With the new logic, gaps are filled based on sampleInterval (2s), 
+	// even if the pixel step is smaller (1s).
 	if strings.Contains(dataPart, " ") {
-		t.Errorf("sparkline data part should be continuous, got %q (full: %q)", dataPart, res)
+		t.Errorf("sparkline data part should be continuous due to gap filling, got %q (full: %q)", dataPart, res)
 	}
 }
 
