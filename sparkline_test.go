@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestGetNumericHeader(t *testing.T) {
@@ -48,6 +49,42 @@ func TestGetNumericHistory(t *testing.T) {
 	// Should contain "90.0K" for -10s
 	if !strings.Contains(histStr, "90.0K") {
 		t.Errorf("numeric history missing -10s value: %q", histStr)
+	}
+}
+
+func TestFormatRateCompact(t *testing.T) {
+	tests := []struct {
+		rate     float64
+		expected string
+	}{
+		{0.0, "0"},
+		{0.5, "0"},
+		{1.5, "1.5K"},
+		{1024.0, "1.0M"},
+		{1536.0, "1.5M"},
+		{1048576.0, "1.0G"},
+	}
+
+	for _, tc := range tests {
+		actual := formatRateCompact(tc.rate)
+		if actual != tc.expected {
+			t.Errorf("formatRateCompact(%.2f) = %q; want %q", tc.rate, actual, tc.expected)
+		}
+	}
+}
+
+func TestGetTrendHeader(t *testing.T) {
+	width := 50
+	delay := 1.0
+	zoom := 1
+	now := float64(time.Now().UnixNano()) / 1e9
+	
+	header := getTrendHeader(width, delay, zoom, now)
+	if len(header) != width {
+		t.Errorf("trend header length %d, want %d", len(header), width)
+	}
+	if !strings.Contains(header, "now") {
+		t.Errorf("trend header missing 'now': %q", header)
 	}
 }
 

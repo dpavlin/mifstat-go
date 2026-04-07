@@ -250,8 +250,9 @@ func getTrendHeader(width int, delay float64, zoom int, dispNow float64) string 
 			sLabel = fmt.Sprintf("%.0fh", s/3600)
 		}
 		for i, ch := range []rune(sLabel) {
-			if pos+i < width {
-				hdr[pos+i] = ch
+			targetPos := pos + i - (len(sLabel) - 1)
+			if targetPos >= 0 && targetPos < width {
+				hdr[targetPos] = ch
 			}
 		}
 	}
