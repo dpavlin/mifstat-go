@@ -13,7 +13,8 @@ const MAX_HIST_SEC = 21600.0 // 6 hours
 type PortHistory struct{ In, Out []Sample }
 
 type PortRate struct {
-	In, Out float64
+	In, Out       float64
+	EmaIn, EmaOut float64
 }
 
 type SwitchData struct {
@@ -21,6 +22,7 @@ type SwitchData struct {
 	Name, IP     string
 	Status       string
 	In, Out      float64
+	EmaIn, EmaOut float64
 	HistIn       []Sample
 	HistOut      []Sample
 	PortHist     map[string]*PortHistory
@@ -48,6 +50,7 @@ type SaveState struct {
 type DisplayItem struct {
 	IP, Name, SwName, Port, Status string
 	In, Out                        float64
+	EmaIn, EmaOut                  float64
 	Hist                           []Sample
 	SampleInterval                 float64
 	Detail                         bool

@@ -145,6 +145,8 @@ func processSamples(sw *SwitchData, tables map[string]map[int]uint64, now, delay
 			}
 			sw.Rates[pname].In = rin
 			sw.Rates[pname].Out = rout
+			sw.Rates[pname].EmaIn = calcEMA(rin, sw.Rates[pname].EmaIn, 0.1)
+			sw.Rates[pname].EmaOut = calcEMA(rout, sw.Rates[pname].EmaOut, 0.1)
 
 			totalIn += rin
 			totalOut += rout
@@ -167,6 +169,8 @@ func processSamples(sw *SwitchData, tables map[string]map[int]uint64, now, delay
 	}
 
 	sw.In, sw.Out = totalIn, totalOut
+	sw.EmaIn = calcEMA(totalIn, sw.EmaIn, 0.1)
+	sw.EmaOut = calcEMA(totalOut, sw.EmaOut, 0.1)
 	sw.HistIn = append(sw.HistIn, Sample{now, totalIn})
 	sw.HistOut = append(sw.HistOut, Sample{now, totalOut})
 	sw.HistIn = pruneSamples(sw.HistIn, now)

@@ -24,3 +24,23 @@ func TestFormatRate(t *testing.T) {
 		}
 	}
 }
+
+func TestCalcEMA(t *testing.T) {
+	alpha := 0.1
+	tests := []struct {
+		current  float64
+		prev     float64
+		expected float64
+	}{
+		{100.0, 0.0, 100.0},   // Initial value should jump to current
+		{110.0, 100.0, 101.0}, // 110*0.1 + 100*0.9 = 11.0 + 90.0 = 101.0
+		{50.0, 100.0, 95.0},   // 50*0.1 + 100*0.9 = 5.0 + 90.0 = 95.0
+	}
+
+	for _, tc := range tests {
+		actual := calcEMA(tc.current, tc.prev, alpha)
+		if actual != tc.expected {
+			t.Errorf("calcEMA(%.2f, %.2f) = %.2f; want %.2f", tc.current, tc.prev, actual, tc.expected)
+		}
+	}
+}

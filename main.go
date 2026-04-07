@@ -291,7 +291,9 @@ func main() {
 				}
 				items = append(items, DisplayItem{
 					IP: sw.IP, Name: sw.Name, Status: sw.Status,
-					In: sw.In, Out: sw.Out, Hist: hist, SampleInterval: si,
+					In: sw.In, Out: sw.Out,
+					EmaIn: sw.EmaIn, EmaOut: sw.EmaOut,
+					Hist: hist, SampleInterval: si,
 				})
 			} else {
 				for pname, r := range sw.Rates {
@@ -307,6 +309,7 @@ func main() {
 						items = append(items, DisplayItem{
 							IP: sw.IP, SwName: sw.Name, Port: pname, Status: sw.Status,
 							In: r.In, Out: r.Out,
+							EmaIn: r.EmaIn, EmaOut: r.EmaOut,
 							Hist: hist, SampleInterval: si, Detail: true,
 						})
 					}
@@ -319,7 +322,7 @@ func main() {
 			sort.Slice(items, func(i, j int) bool {
 				switch sortKey {
 				case "in":
-					return items[i].In > items[j].In
+					return items[i].EmaIn > items[j].EmaIn
 				case "ip":
 					return items[i].IP < items[j].IP
 				case "name":
@@ -333,7 +336,7 @@ func main() {
 					}
 					return n < m
 				}
-				return items[i].Out > items[j].Out
+				return items[i].EmaOut > items[j].EmaOut
 			})
 		} else if len(prevItems) > 0 {
 			type diKey struct{ ip, port string }
