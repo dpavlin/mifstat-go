@@ -178,7 +178,7 @@ func main() {
 	showDetail := false
 	showPerf := false
 	sortKey := "out"
-	autoSort := true
+	autoSort := map[string]bool{"main": true, "detail": true, "perf": true}
 	zoomIdx := 0
 	var viewNow *float64
 	var prevItems []DisplayItem
@@ -186,6 +186,14 @@ func main() {
 	defer ticker.Stop()
 
 	for {
+		// Determine which screen's sort state to use.
+		currScreen := "main"
+		if showPerf {
+			currScreen = "perf"
+		} else if showDetail {
+			currScreen = "detail"
+		}
+
 		select {
 		case ev := <-eventCh:
 			switch e := ev.(type) {
@@ -200,10 +208,9 @@ func main() {
 				case e.Rune() == 'd':
 					showDetail = !showDetail
 					showPerf = false
-					autoSort = true
 					prevItems = nil
 				case e.Rune() == ' ':
-					autoSort = !autoSort
+					autoSort[currScreen] = !autoSort[currScreen]
 				case e.Rune() == '1':
 					sortKey = "ip"
 				case e.Rune() == '2':
@@ -301,7 +308,7 @@ func main() {
 			sw.mu.RUnlock()
 		}
 
-		if autoSort {
+		if autoSort[currScreen] {
 			sort.Slice(items, func(i, j int) bool {
 				switch sortKey {
 				case "in":
@@ -353,16 +360,16 @@ func main() {
 		warnStyle := defStyle.Foreground(tcell.ColorYellow)
 
 		if showPerf {
-			renderPerf(screen, states, h, w, revStyle, warnStyle, defStyle, dimStyle)
+			renderPerf(screen, states, h, w, revStyle, warnStyle, defStyle, dimStyle, autoSort["perf"])
 			continue
 		}
 
-		renderMain(screen, items, h, w, delay, zoom, dispNow, revStyle, defStyle, dimStyle, autoSort, viewNow)
+		renderMain(screen, items, h, w, delay, zoom, dispNow, revStyle, defStyle, dimStyle, autoSort[currScreen], viewNow)
 		screen.Show()
 	}
 }
 
-func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, warnStyle, defStyle, dimStyle tcell.Style) {
+func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, warnStyle, defStyle, dimStyle tcell.Style, autoSort bool) {
 	type perfRow struct {
 		IP, Name, Status string
 		Polls, Errors    uint64
@@ -418,7 +425,11 @@ func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, w
 			r.Polls, r.Errors, r.PhysPorts, r.IfaceCount, r.LastMs, r.AvgMs, r.SampleSec)
 		drawStr(screen, 0, i+1, line[:min(len(line), w-1)], st)
 	}
-	statusLine := "p:hide-perf  q:quit  (sorted by avg poll time; Phys=ethernetCsmacd+LAG, Ifaces=all SNMP)"
+	frozen := "[AUTO]"
+	if !autoSort {
+		frozen = "[FROZEN]"
+	}
+	statusLine := fmt.Sprintf("%s p:hide-perf  q:quit  (sorted by avg poll time; Phys=ethernetCsmacd+LAG, Ifaces=all SNMP)", frozen)
 	drawStr(screen, 0, h-1, statusLine[:min(len(statusLine), w-1)], dimStyle)
 	screen.Show()
 }
