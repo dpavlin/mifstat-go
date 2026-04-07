@@ -105,14 +105,24 @@ func processSamples(sw *SwitchData, tables map[string]map[int]uint64, now, delay
 		sw.prevCounters = make(map[string][2]uint64)
 	}
 
-	// Calculate SampleInterval EMA
+	// Calculate actual dt from previous poll
+	var dt float64
 	if !sw.prevTS.IsZero() {
-		dt := time.Since(sw.prevTS).Seconds()
+		dt = now - (float64(sw.prevTS.UnixNano()) / 1e9)
+		if dt <= 0 {
+			dt = delay
+		}
+		// Update SampleInterval EMA
 		sw.SampleInterval = 0.9*sw.SampleInterval + 0.1*dt
+	} else {
+		dt = delay
 	}
-	sw.prevTS = time.Now()
+
+	firstPoll := sw.prevTS.IsZero()
+	sw.prevTS = time.Unix(0, int64(now*1e9))
 
 	totalIn, totalOut := 0.0, 0.0
+	hasHistory := false
 	for idx, cin := range inT {
 		cout, ok := outT[idx]
 		if !ok {
@@ -120,18 +130,14 @@ func processSamples(sw *SwitchData, tables map[string]map[int]uint64, now, delay
 		}
 		pname := fmt.Sprintf("p%d", idx)
 		prev, exists := sw.prevCounters[pname]
-		if exists {
-			dt := now - (float64(sw.prevTS.UnixNano()) / 1e9)
-			if dt <= 0 {
-				dt = delay
-			}
-			rin := float64(cin-prev[0]) / 1024.0 / delay
-			rout := float64(cout-prev[1]) / 1024.0 / delay
-			if rin < 0 {
-				rin = 0
-			}
-			if rout < 0 {
-				rout = 0
+		if exists && !firstPoll {
+			// Calculate rates in KB/s using actual dt
+			rin := float64(cin-prev[0]) / 1024.0 / dt
+			rout := float64(cout-prev[1]) / 1024.0 / dt
+
+			// Handle counter resets (reboots) - 64-bit HC wrap is extremely unlikely between polls
+			if cin < prev[0] || cout < prev[1] {
+				rin, rout = 0, 0
 			}
 
 			if sw.Rates[pname] == nil {
@@ -142,6 +148,7 @@ func processSamples(sw *SwitchData, tables map[string]map[int]uint64, now, delay
 
 			totalIn += rin
 			totalOut += rout
+			hasHistory = true
 
 			if sw.PortHist[pname] == nil {
 				sw.PortHist[pname] = &PortHistory{}
@@ -156,6 +163,11 @@ func processSamples(sw *SwitchData, tables map[string]map[int]uint64, now, delay
 		}
 		sw.prevCounters[pname] = [2]uint64{cin, cout}
 	}
+
+	if firstPoll || !hasHistory {
+		return
+	}
+
 	sw.In, sw.Out = totalIn, totalOut
 	sw.HistIn = append(sw.HistIn, Sample{now, totalIn})
 	sw.HistOut = append(sw.HistOut, Sample{now, totalOut})
