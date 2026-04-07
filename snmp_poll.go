@@ -252,12 +252,11 @@ func bulkWalkMulti(conn *gosnmp.GoSNMP, baseOIDs []string, maxRep uint32) (map[s
 }
 
 func oidIndex(oid, base string) (int, bool) {
+	oid = strings.TrimPrefix(oid, ".")
+	base = strings.TrimPrefix(base, ".")
 	prefix := base + "."
 	if !strings.HasPrefix(oid, prefix) {
-		prefix = "." + base + "."
-		if !strings.HasPrefix(oid, prefix) {
-			return 0, false
-		}
+		return 0, false
 	}
 	suffix := oid[len(prefix):]
 	n, err := strconv.Atoi(strings.SplitN(suffix, ".", 2)[0])
