@@ -1,0 +1,181 @@
+package main
+
+import (
+	"fmt"
+	"math"
+	"time"
+)
+
+var zoomLevels = []int{1, 2, 5, 10, 30, 60, 120}
+
+// getSparkline renders history as block-character sparkline cells.
+// Returns (chars, staleFlags): stale cells should be rendered with dimStyle.
+func getSparkline(history []Sample, width int, delay float64, zoom int, now, sampleInterval float64) (chars []rune, staleFlags []bool) {
+	chars = make([]rune, width)
+	staleFlags = make([]bool, width)
+	for i := range chars {
+		chars[i] = ' '
+	}
+	if width <= 0 || len(history) == 0 {
+		return
+	}
+
+	pixelSec := delay * float64(zoom)
+	startTime := now - float64(width)*pixelSec
+
+	// Build buckets: aligned time slot → max value in that slot.
+	buckets := make(map[float64]float64)
+	for _, s := range history {
+		if s.TS < startTime {
+			continue
+		}
+		tb := math.Floor(s.TS/pixelSec) * pixelSec
+		if v, ok := buckets[tb]; !ok || s.Val > v {
+			buckets[tb] = s.Val
+		}
+	}
+	if len(buckets) == 0 {
+		return
+	}
+
+	// Find rightmost real sample in the window.
+	var lastSampleT float64
+	for t := range buckets {
+		if t > lastSampleT {
+			lastSampleT = t
+		}
+	}
+
+	// persistSec: how far forward to carry a sample value to fill inter-sample gaps.
+	effectivePeriod := math.Max(delay, sampleInterval)
+	persistSec := math.Min(effectivePeriod*2.5*float64(zoom), float64(width)*pixelSec)
+
+	data := make([]float64, width)
+	valid := make([]bool, width)
+	stale := make([]bool, width) // true = pixel is in the right-edge gap
+
+	for i := 0; i < width; i++ {
+		tp := now - float64(width-1-i)*pixelSec
+		tb := math.Floor(tp/pixelSec) * pixelSec
+		if v, ok := buckets[tb]; ok {
+			data[i], valid[i] = v, true
+		} else {
+			// Find most recent sample strictly before this pixel.
+			var lastT, lastV float64
+			found := false
+			for t, v := range buckets {
+				if t < tp && (!found || t > lastT) {
+					lastT, lastV, found = t, v, true
+				}
+			}
+			if found && (tp-lastT) < persistSec {
+				data[i], valid[i] = lastV, true
+				// Stale: this pixel is after the last real sample.
+				if tb > lastSampleT {
+					stale[i] = true
+				}
+			}
+		}
+	}
+
+	// Normalise across all valid pixels (fresh and stale share the same scale).
+	high, low := 1.0, 0.0
+	first := true
+	for i, v := range data {
+		if !valid[i] {
+			continue
+		}
+		if first {
+			high, low, first = v, v, false
+		} else {
+			if v > high {
+				high = v
+			}
+			if v < low {
+				low = v
+			}
+		}
+	}
+
+	// Age indicator: how many seconds since the last real sample.
+	ageS := int(now - lastSampleT)
+	var ageStr string
+	if ageS >= 3600 {
+		ageStr = fmt.Sprintf("%2dh", ageS/3600)
+	} else if ageS >= 60 {
+		ageStr = fmt.Sprintf("%2dm", ageS/60)
+	} else {
+		ageStr = fmt.Sprintf("%2ds", ageS)
+	}
+	sparkW := width - len(ageStr)
+	if sparkW < 0 {
+		sparkW = 0
+	}
+
+	blockChars := []rune(" ▂▃▄▅▆▇█")
+	for i := 0; i < sparkW; i++ {
+		if !valid[i] {
+			continue // leave as space
+		}
+		idx := 0
+		if high > low {
+			idx = int(((data[i] - low) / (high - low)) * 7)
+		} else if data[i] > 0 {
+			idx = 4 // flat non-zero history → middle bar
+		}
+		if idx < 0 {
+			idx = 0
+		}
+		if idx > 7 {
+			idx = 7
+		}
+		chars[i] = blockChars[idx]
+		staleFlags[i] = stale[i]
+	}
+	// Overlay age indicator at the right edge.
+	for i, ch := range []rune(ageStr) {
+		if sparkW+i < width {
+			chars[sparkW+i] = ch
+			staleFlags[sparkW+i] = true
+		}
+	}
+	return
+}
+
+func getTrendHeader(width int, delay float64, zoom int, dispNow float64) string {
+	if width < 20 {
+		return ""
+	}
+	pixelSec := delay * float64(zoom)
+	labels := []float64{0, 30, 60, 120, 300, 600, 1800, 3600, 7200, 14400, 21600}
+	hdr := make([]rune, width)
+	for i := range hdr {
+		hdr[i] = ' '
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	offset := now - dispNow
+
+	for _, s := range labels {
+		pos := width - 1 - int((s+offset)/pixelSec)
+		if pos < 0 || pos >= width {
+			continue
+		}
+		var sLabel string
+		if s == 0 {
+			sLabel = "now"
+		} else if s < 60 {
+			sLabel = fmt.Sprintf("%.0fs", s)
+		} else if s < 3600 {
+			sLabel = fmt.Sprintf("%.0fm", s/60)
+		} else {
+			sLabel = fmt.Sprintf("%.0fh", s/3600)
+		}
+		for i, ch := range []rune(sLabel) {
+			if pos+i < width {
+				hdr[pos+i] = ch
+			}
+		}
+	}
+	return string(hdr)
+}
