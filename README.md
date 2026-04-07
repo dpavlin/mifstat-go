@@ -26,7 +26,7 @@ CGO_ENABLED=0 go build -o mifstat .
 
 ### Switch List
 
-By default, `mifstat` expects a list of switches in `/dev/shm/sw-ip-name-mac` (this will be made configurable soon). The format is:
+`mifstat` expects a list of switches (default path `/dev/shm/sw-ip-name-mac`, can be changed with `-f`). The format is:
 ```
 IP_ADDRESS NAME [MAC_ADDRESS]
 ```
