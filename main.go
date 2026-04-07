@@ -179,6 +179,7 @@ func main() {
 	showPerf := false
 	sortKey := "out"
 	autoSort := map[string]bool{"main": true, "detail": true, "perf": true}
+	viewMode := 0 // 0: Sparkline, 1: Braille, 2: Numeric
 	zoomIdx := 0
 	var viewNow *float64
 	var prevItems []DisplayItem
@@ -211,6 +212,8 @@ func main() {
 					prevItems = nil
 				case e.Rune() == ' ':
 					autoSort[currScreen] = !autoSort[currScreen]
+				case e.Rune() == 'v':
+					viewMode = (viewMode + 1) % 3
 				case e.Rune() == '1':
 					sortKey = "ip"
 				case e.Rune() == '2':
@@ -364,7 +367,7 @@ func main() {
 			continue
 		}
 
-		renderMain(screen, items, h, w, delay, zoom, dispNow, revStyle, defStyle, dimStyle, autoSort[currScreen], viewNow)
+		renderMain(screen, items, h, w, delay, zoom, dispNow, revStyle, defStyle, dimStyle, autoSort[currScreen], viewNow, viewMode)
 		screen.Show()
 	}
 }
@@ -434,7 +437,7 @@ func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, w
 	screen.Show()
 }
 
-func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float64, zoom int, dispNow float64, revStyle, defStyle, dimStyle tcell.Style, autoSort bool, viewNow *float64) {
+func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float64, zoom int, dispNow float64, revStyle, defStyle, dimStyle tcell.Style, autoSort bool, viewNow *float64, viewMode int) {
 	wIP, wName := len("IP"), len("Name")
 	wSw, wPort := len("Switch"), len("Port")
 	for _, item := range items {
@@ -471,8 +474,14 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 		hdr = fmt.Sprintf("%-*s %-*s %10s %10s | ", wSw, "Switch", wPort, "Port", "IN(KB/s)", "OUT(KB/s)")
 	}
 	sparkW := w - len(hdr) - 1
-	trendHdr := getTrendHeader(sparkW, *delay, zoom, dispNow)
-	drawStr(screen, 0, 0, (hdr+trendHdr)[:min(len(hdr+trendHdr), w-1)], revStyle)
+
+	if viewMode == 2 {
+		hdr += " [ 10s | 1m | 5m | 15m average KB/s ]"
+		drawStr(screen, 0, 0, hdr[:min(len(hdr), w-1)], revStyle)
+	} else {
+		trendHdr := getTrendHeader(sparkW, *delay, zoom, dispNow)
+		drawStr(screen, 0, 0, (hdr+trendHdr)[:min(len(hdr+trendHdr), w-1)], revStyle)
+	}
 
 	for i, item := range items {
 		if i >= h-2 {
@@ -490,7 +499,7 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 			line = fmt.Sprintf("%-*s %-*s %10.2f %10.2f | ",
 				wSw, statusPfx+item.SwName, wPort, item.Port, item.In, item.Out)
 		}
-		sparkChars, sparkStale := getSparkline(item.Hist, sparkW, *delay, zoom, dispNow, item.SampleInterval)
+
 		lineRunes := []rune(line)
 		for k, ch := range lineRunes {
 			if k >= w {
@@ -499,15 +508,28 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 			screen.SetContent(k, i+1, ch, nil, defStyle)
 		}
 		xSpark := len(lineRunes)
-		for k, ch := range sparkChars {
-			if xSpark+k >= w {
-				break
+
+		if viewMode == 2 {
+			numStr := getNumericHistory(item.Hist, dispNow)
+			drawStr(screen, xSpark, i+1, numStr, defStyle)
+		} else {
+			var sparkChars []rune
+			var sparkStale []bool
+			if viewMode == 1 {
+				sparkChars, sparkStale = getBrailleSparkline(item.Hist, sparkW, *delay, zoom, dispNow, item.SampleInterval)
+			} else {
+				sparkChars, sparkStale = getSparkline(item.Hist, sparkW, *delay, zoom, dispNow, item.SampleInterval)
 			}
-			st := defStyle
-			if sparkStale[k] {
-				st = dimStyle
+			for k, ch := range sparkChars {
+				if xSpark+k >= w {
+					break
+				}
+				st := defStyle
+				if sparkStale[k] {
+					st = dimStyle
+				}
+				screen.SetContent(xSpark+k, i+1, ch, nil, st)
 			}
-			screen.SetContent(xSpark+k, i+1, ch, nil, st)
 		}
 	}
 
@@ -519,9 +541,10 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 	if !autoSort {
 		frozen = "[FROZEN]"
 	}
+	vModes := []string{"SPARK", "BRAIL", "NUMER"}
 	delayStr := fmt.Sprintf("%.4g", *delay)
-	statusLine := fmt.Sprintf("%s %sd=%ss zoom:1/%dx  q:quit d:detail p:perf i/o:sort ARROWS:scroll ENTER:now",
-		frozen, scroll, delayStr, zoom)
+	statusLine := fmt.Sprintf("%s %s %sd=%ss zoom:1/%dx  q:quit d:detail v:view i/o:sort ARROWS:scroll ENTER:now",
+		frozen, vModes[viewMode], scroll, delayStr, zoom)
 	drawStr(screen, 0, h-1, statusLine[:min(len(statusLine), w-1)], dimStyle)
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
 	if w-len(nowStr)-1 > len(statusLine)+2 {
