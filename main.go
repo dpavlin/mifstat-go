@@ -218,9 +218,9 @@ func main() {
 					autoSort[currScreen] = !autoSort[currScreen]
 				case e.Rune() == 'v':
 					viewMode = (viewMode + 1) % 2
-				case e.Rune() == '1':
+				case e.Rune() == '1', e.Rune() == 'a':
 					sortKey = "ip"
-				case e.Rune() == '2':
+				case e.Rune() == '2', e.Rune() == 'n':
 					sortKey = "name"
 				case e.Rune() == 'i':
 					sortKey = "in"
@@ -374,7 +374,7 @@ func main() {
 			continue
 		}
 
-		renderMain(screen, items, h, w, delay, zoom, dispNow, revStyle, defStyle, dimStyle, autoSort[currScreen], viewNow, viewMode)
+		renderMain(screen, items, h, w, delay, zoom, dispNow, revStyle, defStyle, dimStyle, autoSort[currScreen], viewNow, viewMode, sortKey)
 		screen.Show()
 	}
 }
@@ -444,7 +444,7 @@ func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, w
 	screen.Show()
 }
 
-func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float64, zoom int, dispNow float64, revStyle, defStyle, dimStyle tcell.Style, autoSort bool, viewNow *float64, viewMode int) {
+func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float64, zoom int, dispNow float64, revStyle, defStyle, dimStyle tcell.Style, autoSort bool, viewNow *float64, viewMode int, sortKey string) {
 	wIP, wName := len("IP"), len("Name")
 	wSw, wPort := len("Switch"), len("Port")
 	for _, item := range items {
@@ -544,8 +544,9 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 	}
 	vModes := []string{"SPARK", "NUMER"}
 	delayStr := fmt.Sprintf("%.4g", *delay)
-	statusLine := fmt.Sprintf("%s %s %sd=%ss zoom:1/%dx  q:quit d:detail v:view i/o:sort ARROWS:scroll ENTER:now",
-		frozen, vModes[viewMode], scroll, delayStr, zoom)
+	sortIndicator := fmt.Sprintf("sort:%s", sortKey)
+	statusLine := fmt.Sprintf("%s %s %s %sd=%ss zoom:1/%dx  q:quit d:detail v:view i/o/n/a:sort ARROWS:scroll ENTER:now",
+		frozen, vModes[viewMode], sortIndicator, scroll, delayStr, zoom)
 	drawStr(screen, 0, h-1, statusLine[:min(len(statusLine), w-1)], dimStyle)
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
 	if w-len(nowStr)-1 > len(statusLine)+2 {
