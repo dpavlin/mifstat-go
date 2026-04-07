@@ -179,7 +179,7 @@ func main() {
 	showPerf := false
 	sortKey := "out"
 	autoSort := map[string]bool{"main": true, "detail": true, "perf": true}
-	viewMode := 0 // 0: Sparkline, 1: Braille, 2: Numeric
+	viewMode := 0 // 0: Sparkline, 1: Numeric
 	zoomIdx := 0
 	var viewNow *float64
 	var prevItems []DisplayItem
@@ -217,7 +217,7 @@ func main() {
 				case e.Rune() == ' ':
 					autoSort[currScreen] = !autoSort[currScreen]
 				case e.Rune() == 'v':
-					viewMode = (viewMode + 1) % 3
+					viewMode = (viewMode + 1) % 2
 				case e.Rune() == '1':
 					sortKey = "ip"
 				case e.Rune() == '2':
@@ -479,7 +479,7 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 	}
 	sparkW := w - len(hdr) - 1
 
-	if viewMode == 2 {
+	if viewMode == 1 {
 		hdr += getNumericHeader(sparkW, *delay, zoom)
 		drawStr(screen, 0, 0, hdr[:min(len(hdr), w-1)], revStyle)
 	} else {
@@ -513,17 +513,11 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 		}
 		xSpark := len(lineRunes)
 
-		if viewMode == 2 {
+		if viewMode == 1 {
 			numStr := getNumericHistory(item.Hist, dispNow, sparkW, *delay, zoom, item.SampleInterval)
 			drawStr(screen, xSpark, i+1, numStr, defStyle)
 		} else {
-			var sparkChars []rune
-			var sparkStale []bool
-			if viewMode == 1 {
-				sparkChars, sparkStale = getBrailleSparkline(item.Hist, sparkW, *delay, zoom, dispNow, item.SampleInterval)
-			} else {
-				sparkChars, sparkStale = getSparkline(item.Hist, sparkW, *delay, zoom, dispNow, item.SampleInterval)
-			}
+			sparkChars, sparkStale := getSparkline(item.Hist, sparkW, *delay, zoom, dispNow, item.SampleInterval)
 			for k, ch := range sparkChars {
 				if xSpark+k >= w {
 					break
@@ -545,7 +539,7 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 	if !autoSort {
 		frozen = "[FROZEN]"
 	}
-	vModes := []string{"SPARK", "BRAIL", "NUMER"}
+	vModes := []string{"SPARK", "NUMER"}
 	delayStr := fmt.Sprintf("%.4g", *delay)
 	statusLine := fmt.Sprintf("%s %s %sd=%ss zoom:1/%dx  q:quit d:detail v:view i/o:sort ARROWS:scroll ENTER:now",
 		frozen, vModes[viewMode], scroll, delayStr, zoom)

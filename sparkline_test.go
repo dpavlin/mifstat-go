@@ -71,23 +71,3 @@ func TestGetSparkline(t *testing.T) {
 		t.Errorf("stale flags length %d, want %d", len(stale), width)
 	}
 }
-
-func TestGetBrailleSparkline(t *testing.T) {
-	history := []Sample{
-		{TS: 100.0, Val: 10.0},
-		{TS: 100.5, Val: 20.0},
-	}
-	width := 10
-	delay := 1.0
-	zoom := 1
-	now := 105.0
-	sampleInterval := 1.0
-
-	chars, stale := getBrailleSparkline(history, width, delay, zoom, now, sampleInterval)
-	if len(chars) != width {
-		t.Errorf("braille sparkline length %d, want %d", len(chars), width)
-	}
-	if len(stale) != width {
-		t.Errorf("stale flags length %d, want %d", len(stale), width)
-	}
-}
