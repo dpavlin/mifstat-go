@@ -1,5 +1,7 @@
 # mifstat — Multi-switch SNMP Bandwidth Monitor
 
+![mifstat screenshot](img/mifstat-screenshot.png)
+
 `mifstat` is a real-time, terminal-based bandwidth monitor for multiple SNMP-enabled switches. It provides a consolidated view of traffic across all your network devices with live sparklines, performance metrics, and detailed per-port views.
 
 ## Features
