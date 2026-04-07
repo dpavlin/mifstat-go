@@ -79,7 +79,12 @@ func pollSwitch(sw *SwitchData, delay float64, timeout time.Duration, sem chan s
 			sw.Status = "WALK_ERR"
 			sw.ErrorCount++
 		} else {
-			sw.Status = "OK"
+			if len(tables[OID_HCIN]) == 0 {
+				sw.Status = "PARTIAL"
+				sw.ErrorCount++
+			} else {
+				sw.Status = "OK"
+			}
 			now := float64(t0.UnixNano()) / 1e9
 			processSamples(sw, tables, now, delay)
 		}
@@ -91,11 +96,13 @@ func pollSwitch(sw *SwitchData, delay float64, timeout time.Duration, sem chan s
 
 		// Adaptive delay: ensure we don't poll faster than the switch responds.
 		// Wait at least the global delay, but also at least 1.2x the last response time.
-		nextDelay := math.Max(delay, (float64(dur.Milliseconds())/1000.0)*1.2)
-		// Cap the adaptive delay to something reasonable (e.g. 1 minute)
-		nextDelay = math.Min(nextDelay, 60.0)
+		targetPeriod := math.Max(delay, (float64(dur.Milliseconds())/1000.0)*1.2)
+		targetPeriod = math.Min(targetPeriod, 60.0)
 		
-		time.Sleep(time.Duration(nextDelay * float64(time.Second)))
+		sleepFor := time.Duration(targetPeriod*float64(time.Second)) - dur
+		if sleepFor > 0 {
+			time.Sleep(sleepFor)
+		}
 	}
 }
 

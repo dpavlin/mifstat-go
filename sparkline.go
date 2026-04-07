@@ -53,9 +53,9 @@ func getSparkline(history []Sample, width int, delay float64, zoom int, now, sam
 	}
 
 	// persistSec: how far forward to carry a sample value to fill inter-sample gaps.
-	// We use the actual switch sampleInterval to bridge gaps, plus a small buffer.
+	// We use the actual switch sampleInterval to bridge gaps, plus a buffer.
 	effectivePeriod := math.Max(delay, sampleInterval)
-	persistSec := effectivePeriod * 1.5 * float64(zoom)
+	persistSec := effectivePeriod * 2.5 * float64(zoom)
 	// But don't stretch so far that we hide real long-term data loss.
 	persistSec = math.Min(persistSec, 30.0*float64(zoom))
 
@@ -132,24 +132,26 @@ func getSparkline(history []Sample, width int, delay float64, zoom int, now, sam
 		sparkW = 0
 	}
 
-	blockChars := []rune(" ▂▃▄▅▆▇█")
+	blockChars := []rune(" \u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588")
 	for i := 0; i < sparkW; i++ {
 		if !valid[i] {
 			continue // leave as space
 		}
 		idx := 0
 		if high > low {
-			idx = int(((data[i] - low) / (high - low)) * 7)
+			idx = 1 + int(((data[i]-low)/(high-low))*7)
 		} else if data[i] > 0 {
-			idx = 4 // flat non-zero history → middle bar
+			idx = 4 // flat non-zero history -> middle bar
 		}
-		if idx < 0 {
-			idx = 0
+		
+		if idx < 0 { idx = 0 }
+		if idx > 8 { idx = 8 }
+		
+		if data[i] == 0 && valid[i] {
+			chars[i] = ' '
+		} else {
+			chars[i] = blockChars[idx]
 		}
-		if idx > 7 {
-			idx = 7
-		}
-		chars[i] = blockChars[idx]
 		staleFlags[i] = stale[i]
 	}
 	// Overlay status indicator at the right edge.

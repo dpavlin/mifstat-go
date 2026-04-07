@@ -165,3 +165,32 @@ func TestGetSparklineAdaptiveGap(t *testing.T) {
 		t.Errorf("sparkline data part should be continuous, got %q (full: %q)", dataPart, res)
 	}
 }
+
+func TestGetSparklineLowTraffic(t *testing.T) {
+	// One massive spike and one tiny value. Tiny value should NOT be a space.
+	history := []Sample{
+		{TS: 90.0, Val: 1000.0}, // The spike
+		{TS: 91.0, Val: 1.0},    // Tiny value
+	}
+	width := 20
+	delay := 1.0
+	zoom := 1
+	now := 102.0
+	sampleInterval := 1.0
+
+	chars, _ := getSparkline(history, width, delay, zoom, now, sampleInterval, 50)
+	res := string(chars)
+	
+	// The tiny value at TS=101.0 should map to a pixel before the latency.
+	// It must be one of the block characters, not ' '.
+	foundTiny := false
+	for _, r := range chars {
+		if r != ' ' && r != '█' && r != '5' && r != '0' && r != 'm' {
+			foundTiny = true
+			break
+		}
+	}
+	if !foundTiny {
+		t.Errorf("tiny traffic value should be visible, sparkline was %q", res)
+	}
+}
