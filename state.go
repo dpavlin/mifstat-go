@@ -14,6 +14,7 @@ var stateMagic = [8]byte{'M', 'I', 'F', 'S', 'T', 'A', 'T', '1'}
 func saveState(states []*SwitchData, path string) {
 	f, err := os.Create(path)
 	if err != nil {
+		logger.Printf("saveState: cannot create %s: %v", path, err)
 		return
 	}
 	defer f.Close()
@@ -55,13 +56,18 @@ func saveState(states []*SwitchData, path string) {
 		}
 		sw.mu.RUnlock()
 	}
-	w.Flush()
+	if err := w.Flush(); err != nil {
+		logger.Printf("saveState: flush error: %v", err)
+	}
 }
 
 func loadStateBin(path string) (SaveState, error) {
 	var s SaveState
 	f, err := os.Open(path)
 	if err != nil {
+		if !os.IsNotExist(err) {
+			logger.Printf("loadStateBin: cannot open %s: %v", path, err)
+		}
 		return s, err
 	}
 	defer f.Close()
@@ -69,14 +75,17 @@ func loadStateBin(path string) (SaveState, error) {
 	r := bufio.NewReaderSize(f, 1<<20)
 	var magic [8]byte
 	if _, err := io.ReadFull(r, magic[:]); err != nil {
+		logger.Printf("loadStateBin: read magic error: %v", err)
 		return s, err
 	}
 	if magic != stateMagic {
+		logger.Printf("loadStateBin: bad magic")
 		return s, fmt.Errorf("bad magic")
 	}
 
 	nSw, err := readU32(r)
 	if err != nil {
+		logger.Printf("loadStateBin: read nSw error: %v", err)
 		return s, err
 	}
 

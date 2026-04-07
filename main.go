@@ -184,7 +184,9 @@ func main() {
 	var viewNow *float64
 	var prevItems []DisplayItem
 	ticker := time.NewTicker(50 * time.Millisecond)
+	saveTicker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
+	defer saveTicker.Stop()
 
 	for {
 		// Determine which screen's sort state to use.
@@ -196,6 +198,8 @@ func main() {
 		}
 
 		select {
+		case <-saveTicker.C:
+			saveState(states, *stateFile)
 		case ev := <-eventCh:
 			switch e := ev.(type) {
 			case *tcell.EventKey:

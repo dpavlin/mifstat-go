@@ -8,6 +8,8 @@ import (
 // Sample is a (timestamp, value) data point for history sparklines.
 type Sample struct{ TS, Val float64 }
 
+const MAX_HIST_SEC = 21600.0 // 6 hours
+
 type PortHistory struct{ In, Out []Sample }
 
 type PortRate struct {

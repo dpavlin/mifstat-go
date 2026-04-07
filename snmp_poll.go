@@ -156,10 +156,8 @@ func processSamples(sw *SwitchData, tables map[string]map[int]uint64, now, delay
 			sw.PortHist[pname].In = append(sw.PortHist[pname].In, Sample{now, rin})
 			sw.PortHist[pname].Out = append(sw.PortHist[pname].Out, Sample{now, rout})
 			// Prune
-			if len(sw.PortHist[pname].In) > 1000 {
-				sw.PortHist[pname].In = sw.PortHist[pname].In[len(sw.PortHist[pname].In)-1000:]
-				sw.PortHist[pname].Out = sw.PortHist[pname].Out[len(sw.PortHist[pname].Out)-1000:]
-			}
+			sw.PortHist[pname].In = pruneSamples(sw.PortHist[pname].In, now)
+			sw.PortHist[pname].Out = pruneSamples(sw.PortHist[pname].Out, now)
 		}
 		sw.prevCounters[pname] = [2]uint64{cin, cout}
 	}
@@ -171,10 +169,22 @@ func processSamples(sw *SwitchData, tables map[string]map[int]uint64, now, delay
 	sw.In, sw.Out = totalIn, totalOut
 	sw.HistIn = append(sw.HistIn, Sample{now, totalIn})
 	sw.HistOut = append(sw.HistOut, Sample{now, totalOut})
-	if len(sw.HistIn) > 2000 {
-		sw.HistIn = sw.HistIn[len(sw.HistIn)-2000:]
-		sw.HistOut = sw.HistOut[len(sw.HistOut)-2000:]
+	sw.HistIn = pruneSamples(sw.HistIn, now)
+	sw.HistOut = pruneSamples(sw.HistOut, now)
+}
+
+func pruneSamples(s []Sample, now float64) []Sample {
+	cutoff := now - MAX_HIST_SEC
+	i := 0
+	for ; i < len(s); i++ {
+		if s[i].TS >= cutoff {
+			break
+		}
 	}
+	if i > 0 {
+		return s[i:]
+	}
+	return s
 }
 
 func bulkWalkMulti(conn *gosnmp.GoSNMP, baseOIDs []string, maxRep uint32) (map[string]map[int]uint64, error) {
