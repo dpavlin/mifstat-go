@@ -26,9 +26,12 @@ import (
 	"github.com/gosnmp/gosnmp"
 )
 
-var snmpCommunity = getCommunity()
+var snmpCommunity string
 
-func getCommunity() string {
+func getCommunity(flagCommunity string) string {
+	if flagCommunity != "" {
+		return flagCommunity
+	}
 	home, err := os.UserHomeDir()
 	if err == nil {
 		path := filepath.Join(home, ".config", "snmp.community")
@@ -39,7 +42,6 @@ func getCommunity() string {
 	}
 	return "public"
 }
-
 const (
 	STATE_FILE_BIN   = "/tmp/mifstat_go.bin"
 	MAX_HIST_SEC     = 21600.0
@@ -668,8 +670,8 @@ func readSamples(r io.Reader) ([]Sample, error) {
 	return bytesToSamples(b), nil
 }
 
-func saveState(states []*SwitchData) {
-	f, err := os.Create(STATE_FILE_BIN)
+func saveState(states []*SwitchData, path string) {
+	f, err := os.Create(path)
 	if err != nil {
 		return
 	}
@@ -746,14 +748,14 @@ func loadStateBin(path string) (SaveState, error) {
 	return s, nil
 }
 
-func loadState() SaveState {
-	s, _ := loadStateBin(STATE_FILE_BIN)
+func loadState(path string) SaveState {
+	s, _ := loadStateBin(path)
 	return s
 }
 
-func getSwitches() []map[string]string {
+func getSwitches(path string) []map[string]string {
 	var result []map[string]string
-	f, err := os.Open("/dev/shm/sw-ip-name-mac")
+	f, err := os.Open(path)
 	if err != nil {
 		return result
 	}
@@ -767,7 +769,6 @@ func getSwitches() []map[string]string {
 	}
 	return result
 }
-
 // ===== Benchmark mode =====
 
 // runBenchmark polls all switches once concurrently and prints a timing table.
@@ -903,20 +904,26 @@ type DisplayItem struct {
 }
 
 func main() {
-	delay       := flag.Float64("d", 1.0, "poll interval in seconds (e.g. 0.5, 1, 2)")
+	delay := flag.Float64("d", 1.0, "poll interval in seconds (e.g. 0.5, 1, 2)")
 	snmpTimeout := flag.Duration("snmptimeout", 3*time.Second, "SNMP timeout per poll (reduce for sub-second delay)")
 	logPath := flag.String("log", "", "log SNMP errors and perf to file (e.g. /tmp/mifstat.log)")
-	bench  := flag.Bool("bench", false, "benchmark all switches once and exit (no TUI)")
+	bench := flag.Bool("bench", false, "benchmark all switches once and exit (no TUI)")
 	slowMs := flag.Int64("slowms", 500, "log polls slower than this (ms); 0=disable")
+	community := flag.String("c", "", "SNMP community string (overrides ~/.config/snmp.community)")
+	swFile := flag.String("f", "/dev/shm/sw-ip-name-mac", "switch list file (IP NAME [MAC])")
+	stateFile := flag.String("state", "/tmp/mifstat_go.bin", "state file to save history")
 	flag.Parse()
 	targets := flag.Args()
+
+	snmpCommunity = getCommunity(*community)
 
 	if *logPath != "" {
 		closeLog := initLogger(*logPath)
 		defer closeLog()
 	}
 
-	allSwitches := getSwitches()
+	allSwitches := getSwitches(*swFile)
+
 	var switches []map[string]string
 	if len(targets) == 0 {
 		switches = allSwitches
@@ -943,7 +950,7 @@ func main() {
 		return
 	}
 
-	saved := loadState()
+	saved := loadState(*stateFile)
 	states := make([]*SwitchData, len(switches))
 	for i, sw := range switches {
 		sd := &SwitchData{
@@ -978,7 +985,7 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
 		<-sig
-		saveState(states)
+		saveState(states, *stateFile)
 		screen.Fini()
 		os.Exit(0)
 	}()
@@ -1012,7 +1019,7 @@ func main() {
 				zoom := zoomLevels[zoomIdx]
 				switch {
 				case e.Rune() == 'q':
-					saveState(states)
+					saveState(states, *stateFile)
 					return
 				case e.Rune() == 'p':
 					showPerf = !showPerf
