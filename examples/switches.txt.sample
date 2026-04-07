@@ -1,0 +1,7 @@
+# mifstat switch list sample
+# Format: IP_ADDRESS NAME [MAC]
+# Lines starting with # are currently ignored by the parser (but will be supported in future versions)
+
+10.0.0.1    core-switch-01
+10.0.0.2    edge-switch-a
+10.0.0.3    edge-switch-b

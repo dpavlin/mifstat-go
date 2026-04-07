@@ -18,6 +18,8 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
+const version = "0.1.0"
+
 var (
 	snmpCommunity string
 	logger        = log.New(io.Discard, "", 0)
@@ -53,12 +55,17 @@ func getSwitches(path string) []map[string]string {
 	var result []map[string]string
 	f, err := os.Open(path)
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: could not open switch file %s: %v\n", path, err)
 		return result
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
-		parts := strings.Fields(scanner.Text())
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.Fields(line)
 		if len(parts) >= 2 {
 			result = append(result, map[string]string{"ip": parts[0], "name": parts[1]})
 		}
@@ -75,7 +82,13 @@ func main() {
 	community := flag.String("c", "", "SNMP community string (overrides ~/.config/snmp.community)")
 	swFile := flag.String("f", "/dev/shm/sw-ip-name-mac", "switch list file (IP NAME [MAC])")
 	stateFile := flag.String("state", "/tmp/mifstat_go.bin", "state file to save history")
+	vFlag := flag.Bool("version", false, "show version and exit")
 	flag.Parse()
+
+	if *vFlag {
+		fmt.Printf("mifstat version %s\n", version)
+		os.Exit(0)
+	}
 	targets := flag.Args()
 
 	snmpCommunity = getCommunity(*community)

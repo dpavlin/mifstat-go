@@ -1,4 +1,4 @@
-module mifstat
+module github.com/dpavlin/mifstat-go
 
 go 1.21
 

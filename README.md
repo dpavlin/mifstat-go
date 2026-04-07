@@ -10,16 +10,23 @@
 - **Benchmark Mode**: Diagnoses slow or failing switches with precise timing information.
 - **State Persistence**: Saves history between restarts to maintain continuity.
 - **Efficient**: Single binary, no external dependencies (except Go runtime for building).
+- **Flexible Configuration**: Supports comment lines in switch lists and customizable SNMP communities.
 
 ## Installation
 
-### From Source
+### Using Makefile (Recommended)
 
 ```bash
 git clone https://github.com/dpavlin/mifstat-go.git
 cd mifstat-go
-go mod tidy
-CGO_ENABLED=0 go build -o mifstat .
+make build
+# Binary 'mifstat' will be created in the current directory
+```
+
+### Via Go Install
+
+```bash
+go install github.com/dpavlin/mifstat-go@latest
 ```
 
 ## Usage
@@ -27,9 +34,14 @@ CGO_ENABLED=0 go build -o mifstat .
 ### Switch List
 
 `mifstat` expects a list of switches (default path `/dev/shm/sw-ip-name-mac`, can be changed with `-f`). The format is:
+
+```text
+# IP_ADDRESS NAME [MAC_ADDRESS]
+10.20.0.1  core-switch-01
+10.20.0.2  edge-switch-02
 ```
-IP_ADDRESS NAME [MAC_ADDRESS]
-```
+
+See `examples/switches.txt.sample` for more details.
 
 ### Basic Commands
 
@@ -71,6 +83,17 @@ IP_ADDRESS NAME [MAC_ADDRESS]
 - `-log string`: Path to log SNMP errors and performance.
 - `-bench`: Run benchmark mode and exit.
 - `-slowms int`: Log polls slower than this many milliseconds (default `500`).
+- `-version`: Show version and exit.
+
+## Development
+
+The project is split into several modules for easier maintenance:
+- `main.go`: Entry point, TUI loop, and flags.
+- `types.go`: Struct definitions and common types.
+- `snmp_poll.go`: SNMP polling and OID processing.
+- `sparkline.go`: High-resolution visualization logic.
+- `state.go`: Binary history persistence.
+- `benchmark.go`: Performance testing and diagnostics.
 
 ## License
 
