@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -32,9 +33,6 @@ func pollSwitch(sw *SwitchData, delay float64, timeout time.Duration, sem chan s
 		MaxRepetitions: 20,
 	}
 
-	ticker := time.NewTicker(time.Duration(delay * float64(time.Second)))
-	defer ticker.Stop()
-
 	for {
 		t0 := time.Now()
 		sem <- struct{}{}
@@ -44,7 +42,7 @@ func pollSwitch(sw *SwitchData, delay float64, timeout time.Duration, sem chan s
 			sw.Status = "CONN_ERR"
 			sw.ErrorCount++
 			sw.mu.Unlock()
-			<-ticker.C
+			time.Sleep(time.Duration(delay * float64(time.Second)))
 			continue
 		}
 
@@ -91,9 +89,13 @@ func pollSwitch(sw *SwitchData, delay float64, timeout time.Duration, sem chan s
 			logger.Printf("SLOW: %s (%s) took %v", sw.Name, sw.IP, dur)
 		}
 
-		select {
-		case <-ticker.C:
-		}
+		// Adaptive delay: ensure we don't poll faster than the switch responds.
+		// Wait at least the global delay, but also at least 1.2x the last response time.
+		nextDelay := math.Max(delay, (float64(dur.Milliseconds())/1000.0)*1.2)
+		// Cap the adaptive delay to something reasonable (e.g. 1 minute)
+		nextDelay = math.Min(nextDelay, 60.0)
+		
+		time.Sleep(time.Duration(nextDelay * float64(time.Second)))
 	}
 }
 

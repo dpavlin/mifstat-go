@@ -21,7 +21,12 @@ func getSparkline(history []Sample, width int, delay float64, zoom int, now, sam
 		return
 	}
 
-	pixelSec := delay * float64(zoom)
+	// At zoom 1x, ensure we don't have higher horizontal resolution than the switch can provide.
+	effectiveDelay := delay
+	if zoom == 1 {
+		effectiveDelay = math.Max(delay, sampleInterval)
+	}
+	pixelSec := effectiveDelay * float64(zoom)
 	startTime := now - float64(width)*pixelSec
 
 	// Build buckets: aligned time slot → max value in that slot.
@@ -48,8 +53,11 @@ func getSparkline(history []Sample, width int, delay float64, zoom int, now, sam
 	}
 
 	// persistSec: how far forward to carry a sample value to fill inter-sample gaps.
+	// We use the actual switch sampleInterval to bridge gaps, plus a small buffer.
 	effectivePeriod := math.Max(delay, sampleInterval)
-	persistSec := math.Min(effectivePeriod*2.5*float64(zoom), float64(width)*pixelSec)
+	persistSec := effectivePeriod * 1.5 * float64(zoom)
+	// But don't stretch so far that we hide real long-term data loss.
+	persistSec = math.Min(persistSec, 30.0*float64(zoom))
 
 	data := make([]float64, width)
 	valid := make([]bool, width)

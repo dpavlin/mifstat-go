@@ -133,3 +133,35 @@ func TestGetSparklineStatus(t *testing.T) {
 		t.Errorf("stale sparkline should contain age '10s', got %q", resS)
 	}
 }
+
+func TestGetSparklineAdaptiveGap(t *testing.T) {
+	// Simulate global -d 1 but switch is actually responding every 2s
+	delay := 1.0
+	sampleInterval := 2.0
+	now := 1000.0
+	history := []Sample{
+		{TS: 980.0, Val: 10.0},
+		{TS: 982.0, Val: 10.0},
+		{TS: 984.0, Val: 10.0},
+		{TS: 986.0, Val: 10.0},
+	}
+	width := 30
+	zoom := 1
+
+	chars, _ := getSparkline(history, width, delay, zoom, now, sampleInterval, 50)
+	res := string(chars)
+	
+	// Check continuity between the first and last rendered data point (excluding space)
+	charsOnly := "▂▃▄▅▆▇█"
+	first := strings.IndexAny(res, charsOnly)
+	last := strings.LastIndexAny(res, charsOnly)
+	
+	if first == -1 {
+		t.Fatalf("sparkline rendered no data points, got %q", res)
+	}
+	
+	dataPart := res[first : last+1]
+	if strings.Contains(dataPart, " ") {
+		t.Errorf("sparkline data part should be continuous, got %q (full: %q)", dataPart, res)
+	}
+}
