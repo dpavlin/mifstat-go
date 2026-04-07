@@ -257,34 +257,78 @@ func getBrailleSparkline(history []Sample, width int, delay float64, zoom int, n
 	return
 }
 
-func getNumericHistory(history []Sample, now float64) string {
-	windows := []struct {
-		name string
-		sec  float64
-	}{
-		{"10s", 10},
-		{"1m", 60},
-		{"5m", 300},
-		{"15m", 900},
-	}
+var numericIntervals = []struct {
+	label string
+	sec   float64
+}{
+	{"Now", 0},
+	{"-10s", 10},
+	{"-30s", 30},
+	{"-1m", 60},
+	{"-5m", 300},
+	{"-15m", 900},
+}
 
-	var parts []string
-	for _, w := range windows {
-		sum, count := 0.0, 0
-		start := now - w.sec
-		for _, s := range history {
-			if s.TS >= start && s.TS <= now {
-				sum += s.Val
-				count++
+func getNumericHeader(width int) string {
+	if width < 20 {
+		return ""
+	}
+	numCols := len(numericIntervals)
+	colW := width / numCols
+
+	var sb strings.Builder
+	for _, iv := range numericIntervals {
+		s := fmt.Sprintf("%*s", colW, iv.label)
+		if len(s) > colW {
+			s = s[:colW]
+		}
+		sb.WriteString(s)
+	}
+	rem := width - sb.Len()
+	if rem > 0 {
+		sb.WriteString(strings.Repeat(" ", rem))
+	}
+	return sb.String()
+}
+
+func getNumericHistory(history []Sample, now float64, width int, sampleInterval float64) string {
+	if width < 20 {
+		return ""
+	}
+	numCols := len(numericIntervals)
+	colW := width / numCols
+
+	var sb strings.Builder
+	for _, iv := range numericIntervals {
+		targetTS := now - iv.sec
+		val := -1.0 // indicates stale/no data
+		for i := len(history) - 1; i >= 0; i-- {
+			if history[i].TS <= targetTS {
+				// Check if it's not too stale (max of 1m or 3x sample interval)
+				if (targetTS - history[i].TS) < math.Max(60.0, sampleInterval*3) {
+					val = history[i].Val
+				}
+				break
 			}
 		}
-		val := 0.0
-		if count > 0 {
-			val = sum / float64(count)
+
+		var s string
+		if val < 0 {
+			s = fmt.Sprintf("%*s", colW, "-")
+		} else {
+			s = fmt.Sprintf("%*.1f", colW, val)
 		}
-		parts = append(parts, fmt.Sprintf("%s:%5.1f", w.name, val))
+
+		if len(s) > colW {
+			s = s[:colW]
+		}
+		sb.WriteString(s)
 	}
-	return "[" + strings.Join(parts, " | ") + "]"
+	rem := width - sb.Len()
+	if rem > 0 {
+		sb.WriteString(strings.Repeat(" ", rem))
+	}
+	return sb.String()
 }
 
 func getTrendHeader(width int, delay float64, zoom int, dispNow float64) string {
