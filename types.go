@@ -53,5 +53,6 @@ type DisplayItem struct {
 	EmaIn, EmaOut                  float64
 	Hist                           []Sample
 	SampleInterval                 float64
+	LastPollMs                     int64
 	Detail                         bool
 }

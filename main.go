@@ -294,6 +294,7 @@ func main() {
 					In: sw.In, Out: sw.Out,
 					EmaIn: sw.EmaIn, EmaOut: sw.EmaOut,
 					Hist: hist, SampleInterval: si,
+					LastPollMs: sw.LastPollMs,
 				})
 			} else {
 				for pname, r := range sw.Rates {
@@ -311,6 +312,7 @@ func main() {
 							In: r.In, Out: r.Out,
 							EmaIn: r.EmaIn, EmaOut: r.EmaOut,
 							Hist: hist, SampleInterval: si, Detail: true,
+							LastPollMs: sw.LastPollMs,
 						})
 					}
 				}
@@ -520,7 +522,7 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 			numStr := getNumericHistory(item.Hist, dispNow, sparkW, *delay, zoom, item.SampleInterval)
 			drawStr(screen, xSpark, i+1, numStr, defStyle)
 		} else {
-			sparkChars, sparkStale := getSparkline(item.Hist, sparkW, *delay, zoom, dispNow, item.SampleInterval)
+			sparkChars, sparkStale := getSparkline(item.Hist, sparkW, *delay, zoom, dispNow, item.SampleInterval, item.LastPollMs)
 			for k, ch := range sparkChars {
 				if xSpark+k >= w {
 					break

@@ -100,11 +100,36 @@ func TestGetSparkline(t *testing.T) {
 	now := 105.0
 	sampleInterval := 1.0
 
-	chars, stale := getSparkline(history, width, delay, zoom, now, sampleInterval)
+	chars, stale := getSparkline(history, width, delay, zoom, now, sampleInterval, 45)
 	if len(chars) != width {
 		t.Errorf("sparkline length %d, want %d", len(chars), width)
 	}
 	if len(stale) != width {
 		t.Errorf("stale flags length %d, want %d", len(stale), width)
+	}
+}
+
+func TestGetSparklineStatus(t *testing.T) {
+	history := []Sample{{TS: 1000.0, Val: 10.0}}
+	width := 20
+	delay := 1.0
+	zoom := 1
+	sampleInterval := 1.0
+
+	// Case 1: Fresh data (age = 0s), should show latency
+	nowFresh := 1000.0
+	latency := int64(45)
+	chars, _ := getSparkline(history, width, delay, zoom, nowFresh, sampleInterval, latency)
+	res := string(chars)
+	if !strings.Contains(res, "45m") {
+		t.Errorf("fresh sparkline should contain latency '45m', got %q", res)
+	}
+
+	// Case 2: Stale data (age = 10s), should show age
+	nowStale := 1010.0
+	charsS, _ := getSparkline(history, width, delay, zoom, nowStale, sampleInterval, latency)
+	resS := string(charsS)
+	if !strings.Contains(resS, "10s") {
+		t.Errorf("stale sparkline should contain age '10s', got %q", resS)
 	}
 }

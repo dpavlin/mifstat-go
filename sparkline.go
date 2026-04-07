@@ -11,7 +11,7 @@ var zoomLevels = []int{1, 2, 5, 10, 30, 60, 120}
 
 // getSparkline renders history as block-character sparkline cells.
 // Returns (chars, staleFlags): stale cells should be rendered with dimStyle.
-func getSparkline(history []Sample, width int, delay float64, zoom int, now, sampleInterval float64) (chars []rune, staleFlags []bool) {
+func getSparkline(history []Sample, width int, delay float64, zoom int, now, sampleInterval float64, lastPollMs int64) (chars []rune, staleFlags []bool) {
 	chars = make([]rune, width)
 	staleFlags = make([]bool, width)
 	for i := range chars {
@@ -98,17 +98,28 @@ func getSparkline(history []Sample, width int, delay float64, zoom int, now, sam
 		}
 	}
 
-	// Age indicator: how many seconds since the last real sample.
+	// Status indicator: how many seconds since the last real sample OR latency.
 	ageS := int(now - lastSampleT)
-	var ageStr string
-	if ageS >= 3600 {
-		ageStr = fmt.Sprintf("%2dh", ageS/3600)
-	} else if ageS >= 60 {
-		ageStr = fmt.Sprintf("%2dm", ageS/60)
+	var statusStr string
+	isStale := ageS >= int(delay*2.5) || ageS > 5
+
+	if isStale {
+		if ageS >= 3600 {
+			statusStr = fmt.Sprintf("%2dh", ageS/3600)
+		} else if ageS >= 60 {
+			statusStr = fmt.Sprintf("%2dm", ageS/60)
+		} else {
+			statusStr = fmt.Sprintf("%2ds", ageS)
+		}
 	} else {
-		ageStr = fmt.Sprintf("%2ds", ageS)
+		if lastPollMs < 1000 {
+			statusStr = fmt.Sprintf("%3dm", lastPollMs) // "m" for ms to keep it short
+		} else {
+			statusStr = fmt.Sprintf("%.1fs", float64(lastPollMs)/1000.0)
+		}
 	}
-	sparkW := width - len(ageStr)
+
+	sparkW := width - len(statusStr)
 	if sparkW < 0 {
 		sparkW = 0
 	}
@@ -133,11 +144,11 @@ func getSparkline(history []Sample, width int, delay float64, zoom int, now, sam
 		chars[i] = blockChars[idx]
 		staleFlags[i] = stale[i]
 	}
-	// Overlay age indicator at the right edge.
-	for i, ch := range []rune(ageStr) {
+	// Overlay status indicator at the right edge.
+	for i, ch := range []rune(statusStr) {
 		if sparkW+i < width {
 			chars[sparkW+i] = ch
-			staleFlags[sparkW+i] = true
+			staleFlags[sparkW+i] = isStale
 		}
 	}
 	return
