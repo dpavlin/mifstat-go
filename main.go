@@ -469,9 +469,9 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 	}
 
 	if !showDetail {
-		hdr = fmt.Sprintf("%-*s %-*s %12s %12s | ", wIP, "IP", wName, "Name", "IN(KB/s)", "OUT(KB/s)")
+		hdr = fmt.Sprintf("%-*s %-*s %12s %12s | ", wIP, "IP", wName, "Name", "IN", "OUT")
 	} else {
-		hdr = fmt.Sprintf("%-*s %-*s %10s %10s | ", wSw, "Switch", wPort, "Port", "IN(KB/s)", "OUT(KB/s)")
+		hdr = fmt.Sprintf("%-*s %-*s %12s %12s | ", wSw, "Switch", wPort, "Port", "IN", "OUT")
 	}
 	sparkW := w - len(hdr) - 1
 
@@ -493,11 +493,11 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 		}
 		var line string
 		if !item.Detail {
-			line = fmt.Sprintf("%-*s %-*s %12.2f %12.2f | ",
-				wIP, item.IP, wName, statusPfx+item.Name, item.In, item.Out)
+			line = fmt.Sprintf("%-*s %-*s %12s %12s | ",
+				wIP, item.IP, wName, statusPfx+item.Name, formatRate(item.In), formatRate(item.Out))
 		} else {
-			line = fmt.Sprintf("%-*s %-*s %10.2f %10.2f | ",
-				wSw, statusPfx+item.SwName, wPort, item.Port, item.In, item.Out)
+			line = fmt.Sprintf("%-*s %-*s %12s %12s | ",
+				wSw, statusPfx+item.SwName, wPort, item.Port, formatRate(item.In), formatRate(item.Out))
 		}
 
 		lineRunes := []rune(line)
