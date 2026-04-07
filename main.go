@@ -476,7 +476,7 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 	sparkW := w - len(hdr) - 1
 
 	if viewMode == 2 {
-		hdr += getNumericHeader(sparkW)
+		hdr += getNumericHeader(sparkW, *delay, zoom)
 		drawStr(screen, 0, 0, hdr[:min(len(hdr), w-1)], revStyle)
 	} else {
 		trendHdr := getTrendHeader(sparkW, *delay, zoom, dispNow)
@@ -510,7 +510,7 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 		xSpark := len(lineRunes)
 
 		if viewMode == 2 {
-			numStr := getNumericHistory(item.Hist, dispNow, sparkW, item.SampleInterval)
+			numStr := getNumericHistory(item.Hist, dispNow, sparkW, *delay, zoom, item.SampleInterval)
 			drawStr(screen, xSpark, i+1, numStr, defStyle)
 		} else {
 			var sparkChars []rune

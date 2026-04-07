@@ -257,56 +257,52 @@ func getBrailleSparkline(history []Sample, width int, delay float64, zoom int, n
 	return
 }
 
-var numericIntervals = []struct {
-	label string
-	sec   float64
-}{
-	{"Now", 0},
-	{"-10s", 10},
-	{"-30s", 30},
-	{"-1m", 60},
-	{"-5m", 300},
-	{"-15m", 900},
-}
-
-func getNumericHeader(width int) string {
-	if width < 20 {
+func getNumericHeader(width int, delay float64, zoom int) string {
+	if width < 10 {
 		return ""
 	}
-	numCols := len(numericIntervals)
-	colW := width / numCols
+	colW := 9 // Fixed width for numeric columns
+	numCols := width / colW
+	pixelSec := delay * float64(zoom)
 
 	var sb strings.Builder
-	for _, iv := range numericIntervals {
-		s := fmt.Sprintf("%*s", colW, iv.label)
-		if len(s) > colW {
-			s = s[:colW]
+	for i := 0; i < numCols; i++ {
+		sec := float64(i) * pixelSec
+		var label string
+		if i == 0 {
+			label = "Now"
+		} else if sec < 60 {
+			label = fmt.Sprintf("-%.0fs", sec)
+		} else if sec < 3600 {
+			label = fmt.Sprintf("-%.0fm", sec/60)
+		} else {
+			label = fmt.Sprintf("-%.1fh", sec/3600)
 		}
+		s := fmt.Sprintf("%*s", colW, label)
 		sb.WriteString(s)
-	}
-	rem := width - sb.Len()
-	if rem > 0 {
-		sb.WriteString(strings.Repeat(" ", rem))
 	}
 	return sb.String()
 }
 
-func getNumericHistory(history []Sample, now float64, width int, sampleInterval float64) string {
-	if width < 20 {
+func getNumericHistory(history []Sample, now float64, width int, delay float64, zoom int, sampleInterval float64) string {
+	if width < 10 {
 		return ""
 	}
-	numCols := len(numericIntervals)
-	colW := width / numCols
+	colW := 9
+	numCols := width / colW
+	pixelSec := delay * float64(zoom)
 
 	var sb strings.Builder
-	for _, iv := range numericIntervals {
-		targetTS := now - iv.sec
-		val := -1.0 // indicates stale/no data
-		for i := len(history) - 1; i >= 0; i-- {
-			if history[i].TS <= targetTS {
-				// Check if it's not too stale (max of 1m or 3x sample interval)
-				if (targetTS - history[i].TS) < math.Max(60.0, sampleInterval*3) {
-					val = history[i].Val
+	for i := 0; i < numCols; i++ {
+		targetTS := now - float64(i)*pixelSec
+		val := -1.0
+		// Find closest sample <= targetTS
+		for j := len(history) - 1; j >= 0; j-- {
+			if history[j].TS <= targetTS {
+				// Persist logic: only show value if it's within a reasonable window of the target time
+				persistLimit := math.Max(60.0, pixelSec*1.5)
+				if (targetTS - history[j].TS) < persistLimit {
+					val = history[j].Val
 				}
 				break
 			}
@@ -316,19 +312,25 @@ func getNumericHistory(history []Sample, now float64, width int, sampleInterval 
 		if val < 0 {
 			s = fmt.Sprintf("%*s", colW, "-")
 		} else {
-			s = fmt.Sprintf("%*.1f", colW, val)
-		}
-
-		if len(s) > colW {
-			s = s[:colW]
+			// Format using simpler compact version for the grid to fit in colW (9)
+			s = fmt.Sprintf("%*s", colW, formatRateCompact(val))
 		}
 		sb.WriteString(s)
 	}
-	rem := width - sb.Len()
-	if rem > 0 {
-		sb.WriteString(strings.Repeat(" ", rem))
-	}
 	return sb.String()
+}
+
+func formatRateCompact(kbps float64) string {
+	if kbps >= 1024*1024 {
+		return fmt.Sprintf("%.1fG", kbps/(1024*1024))
+	}
+	if kbps >= 1024 {
+		return fmt.Sprintf("%.1fM", kbps/1024)
+	}
+	if kbps >= 1 {
+		return fmt.Sprintf("%.1fK", kbps)
+	}
+	return "0"
 }
 
 func getTrendHeader(width int, delay float64, zoom int, dispNow float64) string {
