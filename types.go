@@ -118,17 +118,6 @@ type SwitchData struct {
 	MaxRepetitions uint32  // SNMP GetBulk max repetitions
 }
 
-// SaveState holds the deserialized history for migration or loading.
-// We keep the map of slices for easier handling in some parts of the code
-// but will populate it from rings.
-type SaveState struct {
-	Timestamps map[string][]float64
-	HistIn     map[string][]float32
-	HistOut    map[string][]float32
-	LatHist    map[string][]float32
-	PortHist   map[string]map[string]struct{ In, Out []float32 }
-}
-
 type DisplayItem struct {
 	IP, Name, SwName, Port, Status string
 	In, Out                        float64

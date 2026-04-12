@@ -44,21 +44,29 @@ func TestSaveLoadState(t *testing.T) {
 
 	saveState([]*SwitchData{s1}, statePath)
 
-	loaded := loadState(statePath)
-
-	if !reflect.DeepEqual(loaded.HistIn["10.0.0.1"], []float32{10, 20}) {
-		t.Errorf("HistIn mismatch: got %v", loaded.HistIn["10.0.0.1"])
+	sLoaded := &SwitchData{
+		IP:         "10.0.0.1",
+		Timestamps: NewFloat64Ring(10),
+		HistIn:     NewFloat32Ring(10),
+		HistOut:    NewFloat32Ring(10),
+		LatHist:    NewFloat32Ring(10),
+		PortHist:   make(map[string]*PortHistory),
 	}
-	if !reflect.DeepEqual(loaded.HistOut["10.0.0.1"], []float32{5, 15}) {
+	loadState(statePath, []*SwitchData{sLoaded})
+
+	if !reflect.DeepEqual(sLoaded.HistIn.GetAll(), []float32{10, 20}) {
+		t.Errorf("HistIn mismatch: got %v", sLoaded.HistIn.GetAll())
+	}
+	if !reflect.DeepEqual(sLoaded.HistOut.GetAll(), []float32{5, 15}) {
 		t.Errorf("HistOut mismatch")
 	}
-	if !reflect.DeepEqual(loaded.Timestamps["10.0.0.1"], []float64{100, 101}) {
-		t.Errorf("Timestamps mismatch: got %v", loaded.Timestamps["10.0.0.1"])
+	if !reflect.DeepEqual(sLoaded.Timestamps.GetAll(), []float64{100, 101}) {
+		t.Errorf("Timestamps mismatch: got %v", sLoaded.Timestamps.GetAll())
 	}
 	// Note: in MIFSTAT3, port timestamps are reconstruction of switch timestamps.
 	// Since we had 2 switch samples but only 1 port sample, it should align with the second (latest) switch TS.
-	pIn := loaded.PortHist["10.0.0.1"]["p1"].In
-	if len(pIn) != 1 || pIn[0] != 1 {
+	phLoaded, ok := sLoaded.PortHist["p1"]
+	if !ok || phLoaded.In.Len != 1 || phLoaded.In.Get(0) != 1 {
 		t.Errorf("PortHist In mismatch")
 	}
 }

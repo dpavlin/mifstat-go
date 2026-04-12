@@ -10,10 +10,13 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"syscall"
 	"time"
+	"net/http"
+	_ "net/http/pprof"
 
 	"github.com/gdamore/tcell/v2"
 )
@@ -98,7 +101,16 @@ func main() {
 	stateFile := flag.String("state", "/tmp/mifstat_go.bin", "state file to save history")
 	vFlag := flag.Bool("version", false, "show version and exit")
 	histHours := flag.Float64("hist", 6.0, "history duration in hours")
+	pprofAddr := flag.String("pprof", "", "enable pprof on address (e.g. localhost:6060)")
 	flag.Parse()
+
+	if *pprofAddr != "" {
+		go func() {
+			if err := http.ListenAndServe(*pprofAddr, nil); err != nil {
+				logger.Printf("pprof error: %v", err)
+			}
+		}()
+	}
 
 	MAX_HIST_SEC = (*histHours) * 3600.0
 
@@ -149,7 +161,6 @@ func main() {
 		return
 	}
 
-	saved := loadState(*stateFile)
 	states := make([]*SwitchData, len(switches))
 	maxSamples := int(MAX_HIST_SEC / *delay) + 1
 
@@ -167,41 +178,13 @@ func main() {
 			HistOut:        NewFloat32Ring(maxSamples),
 			LatHist:        NewFloat32Ring(maxSamples),
 		}
-		if saved.HistIn != nil {
-			ip := sw["ip"]
-			tsList := saved.Timestamps[ip]
-			inList := saved.HistIn[ip]
-			outList := saved.HistOut[ip]
-			latList := saved.LatHist[ip]
-			
-			// Migration/Fallback: if V1, we might not have unified Timestamps map.
-			// But loadState already handles V1 -> SaveState conversion.
-			for j, t := range tsList {
-				sd.Timestamps.Push(t)
-				if j < len(inList) { sd.HistIn.Push(inList[j]) }
-				if j < len(outList) { sd.HistOut.Push(outList[j]) }
-				if j < len(latList) { sd.LatHist.Push(latList[j]) }
-			}
-
-			if phMap := saved.PortHist[ip]; phMap != nil {
-				for pname, phData := range phMap {
-					ph := &PortHistory{
-						In:  NewFloat32Ring(maxSamples),
-						Out: NewFloat32Ring(maxSamples),
-					}
-					// Align port history with timestamps if possible, 
-					// but SaveState already has them as flat slices.
-					for _, v := range phData.In {
-						ph.In.Push(v)
-					}
-					for _, v := range phData.Out {
-						ph.Out.Push(v)
-					}
-					sd.PortHist[pname] = ph
-				}
-			}
-		}
 		states[i] = sd
+	}
+
+	loadState(*stateFile, states)
+	runtime.GC()
+
+	for _, sd := range states {
 		go pollSwitch(sd, *delay, *snmpTimeout, sem, slowMs)
 	}
 

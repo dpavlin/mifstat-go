@@ -3,7 +3,6 @@ package main
 import (
 	"bufio"
 	"encoding/binary"
-	"fmt"
 	"io"
 	"os"
 	"unsafe"
@@ -100,24 +99,100 @@ func saveState(states []*SwitchData, path string) {
 	}
 }
 
-func loadStateBinV1(r *bufio.Reader) (SaveState, error) {
-	var s SaveState
+func loadState(path string, states []*SwitchData) {
+	f, err := os.Open(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logger.Printf("loadState: cannot open %s: %v", path, err)
+		}
+		return
+	}
+	defer f.Close()
+
+	r := bufio.NewReaderSize(f, 1<<20)
+	var magic [8]byte
+	if _, err := io.ReadFull(r, magic[:]); err != nil {
+		return
+	}
+
+	byIP := make(map[string]*SwitchData)
+	for _, sw := range states {
+		byIP[sw.IP] = sw
+	}
+
+	if string(magic[:]) == "MIFSTAT1" {
+		loadStateBinV1(r, byIP)
+		return
+	}
+	if string(magic[:]) == "MIFSTAT2" {
+		loadStateBinV2(r, byIP)
+		return
+	}
+	if string(magic[:]) != "MIFSTAT3" {
+		return
+	}
+
 	nSw, err := readU32(r)
 	if err != nil {
-		return s, err
+		return
 	}
-	s.HistIn = make(map[string][]float32, nSw)
-	s.HistOut = make(map[string][]float32, nSw)
-	s.LatHist = make(map[string][]float32, nSw)
-	s.Timestamps = make(map[string][]float64, nSw)
-	s.PortHist = make(map[string]map[string]struct{ In, Out []float32 }, nSw)
 
 	for i := uint32(0); i < nSw; i++ {
 		ip, err := readStr(r)
-		if err != nil { return s, err }
+		if err != nil { return }
 		
-		// V1 used []Sample {TS, Val float64}
-		readV1Samples := func() ([]float64, []float32, error) {
+		ts, err := readF64Slice(r)
+		if err != nil { return }
+		in, err := readF32Slice(r)
+		if err != nil { return }
+		out, err := readF32Slice(r)
+		if err != nil { return }
+		lat, err := readF32Slice(r)
+		if err != nil { return }
+		
+		sw, ok := byIP[ip]
+		if ok {
+			for j, t := range ts {
+				sw.Timestamps.Push(t)
+				if j < len(in) { sw.HistIn.Push(in[j]) }
+				if j < len(out) { sw.HistOut.Push(out[j]) }
+				if j < len(lat) { sw.LatHist.Push(lat[j]) }
+			}
+		}
+
+		nPort, err := readU32(r)
+		if err != nil { return }
+		for j := uint32(0); j < nPort; j++ {
+			pname, err := readStr(r)
+			if err != nil { return }
+			pIn, err := readF32Slice(r)
+			if err != nil { return }
+			pOut, err := readF32Slice(r)
+			if err != nil { return }
+			
+			if ok {
+				if sw.PortHist[pname] == nil {
+					sw.PortHist[pname] = &PortHistory{
+						In: NewFloat32Ring(len(sw.Timestamps.Data)),
+						Out: NewFloat32Ring(len(sw.Timestamps.Data)),
+					}
+				}
+				ph := sw.PortHist[pname]
+				for _, v := range pIn { ph.In.Push(v) }
+				for _, v := range pOut { ph.Out.Push(v) }
+			}
+		}
+	}
+}
+
+func loadStateBinV1(r *bufio.Reader, byIP map[string]*SwitchData) {
+	nSw, err := readU32(r)
+	if err != nil { return }
+	for i := uint32(0); i < nSw; i++ {
+		ip, err := readStr(r)
+		if err != nil { return }
+		
+		readV1 := func() ([]float64, []float32, error) {
 			n, err := readU32(r)
 			if err != nil { return nil, nil, err }
 			ts := make([]float64, n)
@@ -132,165 +207,81 @@ func loadStateBinV1(r *bufio.Reader) (SaveState, error) {
 			return ts, val, nil
 		}
 
-		ts, in, err := readV1Samples()
-		if err != nil { return s, err }
-		_, out, err := readV1Samples()
-		if err != nil { return s, err }
+		ts, in, _ := readV1()
+		_, out, _ := readV1()
 		
-		s.Timestamps[ip] = ts
-		s.HistIn[ip] = in
-		s.HistOut[ip] = out
-		
-		nPort, err := readU32(r)
-		if err != nil { return s, err }
-		phMap := make(map[string]struct{ In, Out []float32 }, nPort)
-		for j := uint32(0); j < nPort; j++ {
-			pname, err := readStr(r)
-			if err != nil { return s, err }
-			_, pIn, err := readV1Samples()
-			if err != nil { return s, err }
-			_, pOut, err := readV1Samples()
-			if err != nil { return s, err }
-			phMap[pname] = struct{ In, Out []float32 }{pIn, pOut}
+		sw, ok := byIP[ip]
+		if ok {
+			for j, t := range ts {
+				sw.Timestamps.Push(t)
+				if j < len(in) { sw.HistIn.Push(in[j]) }
+				if j < len(out) { sw.HistOut.Push(out[j]) }
+			}
 		}
-		s.PortHist[ip] = phMap
+		
+		nPort, _ := readU32(r)
+		for j := uint32(0); j < nPort; j++ {
+			pname, _ := readStr(r)
+			_, pIn, _ := readV1()
+			_, pOut, _ := readV1()
+			if ok {
+				if sw.PortHist[pname] == nil {
+					sw.PortHist[pname] = &PortHistory{
+						In: NewFloat32Ring(len(sw.Timestamps.Data)),
+						Out: NewFloat32Ring(len(sw.Timestamps.Data)),
+					}
+				}
+				ph := sw.PortHist[pname]
+				for _, v := range pIn { ph.In.Push(v) }
+				for _, v := range pOut { ph.Out.Push(v) }
+			}
+		}
 	}
-	return s, nil
 }
 
-func loadStateBinV2(r *bufio.Reader) (SaveState, error) {
-	var s SaveState
+func loadStateBinV2(r *bufio.Reader, byIP map[string]*SwitchData) {
 	nSw, err := readU32(r)
-	if err != nil {
-		return s, err
-	}
-	s.HistIn = make(map[string][]float32, nSw)
-	s.HistOut = make(map[string][]float32, nSw)
-	s.LatHist = make(map[string][]float32, nSw)
-	s.Timestamps = make(map[string][]float64, nSw)
-	s.PortHist = make(map[string]map[string]struct{ In, Out []float32 }, nSw)
-
+	if err != nil { return }
 	for i := uint32(0); i < nSw; i++ {
 		ip, err := readStr(r)
-		if err != nil { return s, err }
+		if err != nil { return }
 		
-		ts, err := readF64Slice(r)
-		if err != nil { return s, err }
-		in, err := readF64Slice(r) // V2 was float64
-		if err != nil { return s, err }
-		out, err := readF64Slice(r)
-		if err != nil { return s, err }
-		lat, err := readF64Slice(r)
-		if err != nil { return s, err }
+		ts, _ := readF64Slice(r)
+		in, _ := readF64Slice(r)
+		out, _ := readF64Slice(r)
+		lat, _ := readF64Slice(r)
 		
-		s.Timestamps[ip] = ts
-		s.HistIn[ip] = f64to32(in)
-		s.HistOut[ip] = f64to32(out)
-		s.LatHist[ip] = f64to32(lat)
+		sw, ok := byIP[ip]
+		if ok {
+			for j, t := range ts {
+				sw.Timestamps.Push(t)
+				if j < len(in) { sw.HistIn.Push(float32(in[j])) }
+				if j < len(out) { sw.HistOut.Push(float32(out[j])) }
+				if j < len(lat) { sw.LatHist.Push(float32(lat[j])) }
+			}
+		}
 
-		nPort, err := readU32(r)
-		if err != nil { return s, err }
-		phMap := make(map[string]struct{ In, Out []float32 }, nPort)
+		nPort, _ := readU32(r)
 		for j := uint32(0); j < nPort; j++ {
-			pname, err := readStr(r)
-			if err != nil { return s, err }
+			pname, _ := readStr(r)
 			pLen, _ := readU32(r)
-			ft, _ := readF64Slice(r) // firstTS
-			_ = ft
-			_ = pLen
+			ft, _ := readF64Slice(r)
+			_ = ft; _ = pLen
 			pIn, _ := readF64Slice(r)
 			pOut, _ := readF64Slice(r)
-			phMap[pname] = struct{ In, Out []float32 }{f64to32(pIn), f64to32(pOut)}
+			if ok {
+				if sw.PortHist[pname] == nil {
+					sw.PortHist[pname] = &PortHistory{
+						In: NewFloat32Ring(len(sw.Timestamps.Data)),
+						Out: NewFloat32Ring(len(sw.Timestamps.Data)),
+					}
+				}
+				ph := sw.PortHist[pname]
+				for _, v := range pIn { ph.In.Push(float32(v)) }
+				for _, v := range pOut { ph.Out.Push(float32(v)) }
+			}
 		}
-		s.PortHist[ip] = phMap
 	}
-	return s, nil
-}
-
-func f64to32(s []float64) []float32 {
-	res := make([]float32, len(s))
-	for i, v := range s {
-		res[i] = float32(v)
-	}
-	return res
-}
-
-func loadStateBin(path string) (SaveState, error) {
-	var s SaveState
-	f, err := os.Open(path)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			logger.Printf("loadStateBin: cannot open %s: %v", path, err)
-		}
-		return s, err
-	}
-	defer f.Close()
-
-	r := bufio.NewReaderSize(f, 1<<20)
-	var magic [8]byte
-	if _, err := io.ReadFull(r, magic[:]); err != nil {
-		return s, err
-	}
-
-	if string(magic[:]) == "MIFSTAT1" {
-		return loadStateBinV1(r)
-	}
-	if string(magic[:]) == "MIFSTAT2" {
-		return loadStateBinV2(r)
-	}
-	if string(magic[:]) != "MIFSTAT3" {
-		return s, fmt.Errorf("bad magic: %q", string(magic[:]))
-	}
-
-	nSw, err := readU32(r)
-	if err != nil {
-		return s, err
-	}
-
-	s.Timestamps = make(map[string][]float64, nSw)
-	s.HistIn = make(map[string][]float32, nSw)
-	s.HistOut = make(map[string][]float32, nSw)
-	s.LatHist = make(map[string][]float32, nSw)
-	s.PortHist = make(map[string]map[string]struct{ In, Out []float32 }, nSw)
-
-	for i := uint32(0); i < nSw; i++ {
-		ip, err := readStr(r)
-		if err != nil { return s, err }
-		
-		ts, err := readF64Slice(r)
-		if err != nil { return s, err }
-		in, err := readF32Slice(r)
-		if err != nil { return s, err }
-		out, err := readF32Slice(r)
-		if err != nil { return s, err }
-		lat, err := readF32Slice(r)
-		if err != nil { return s, err }
-		
-		s.Timestamps[ip] = ts
-		s.HistIn[ip] = in
-		s.HistOut[ip] = out
-		s.LatHist[ip] = lat
-
-		nPort, err := readU32(r)
-		if err != nil { return s, err }
-		phMap := make(map[string]struct{ In, Out []float32 }, nPort)
-		for j := uint32(0); j < nPort; j++ {
-			pname, err := readStr(r)
-			if err != nil { return s, err }
-			pIn, err := readF32Slice(r)
-			if err != nil { return s, err }
-			pOut, err := readF32Slice(r)
-			if err != nil { return s, err }
-			phMap[pname] = struct{ In, Out []float32 }{pIn, pOut}
-		}
-		s.PortHist[ip] = phMap
-	}
-	return s, nil
-}
-
-func loadState(path string) SaveState {
-	s, _ := loadStateBin(path)
-	return s
 }
 
 func pu32(b []byte) uint32 { return binary.LittleEndian.Uint32(b) }

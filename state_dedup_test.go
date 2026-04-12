@@ -31,9 +31,18 @@ func TestSaveLoadStateComplete(t *testing.T) {
 	s1.LatHist.Push(50)
 
 	saveState([]*SwitchData{s1}, statePath)
-	loaded := loadState(statePath)
+	
+	s2 := &SwitchData{
+		IP:         "10.0.0.1",
+		Timestamps: NewFloat64Ring(10),
+		HistIn:     NewFloat32Ring(10),
+		HistOut:    NewFloat32Ring(10),
+		LatHist:    NewFloat32Ring(10),
+		PortHist:   make(map[string]*PortHistory),
+	}
+	loadState(statePath, []*SwitchData{s2})
 
-	if !reflect.DeepEqual(loaded.HistIn["10.0.0.1"], []float32{10}) {
-		t.Errorf("HistIn mismatch: got %v", loaded.HistIn["10.0.0.1"])
+	if !reflect.DeepEqual(s2.HistIn.GetAll(), []float32{10}) {
+		t.Errorf("HistIn mismatch: got %v", s2.HistIn.GetAll())
 	}
 }
