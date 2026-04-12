@@ -23,6 +23,13 @@ var metricOIDs = []string{OID_HCIN, OID_HCOUT}
 var physIfTypes = map[int]bool{6: true, 161: true}
 
 func pollSwitch(sw *SwitchData, delay float64, timeout time.Duration, sem chan struct{}, slowMs int64) {
+	sw.mu.RLock()
+	mrep := sw.MaxRepetitions
+	sw.mu.RUnlock()
+	if mrep == 0 {
+		mrep = 20
+	}
+
 	conn := &gosnmp.GoSNMP{
 		Target:         sw.IP,
 		Port:           161,
@@ -30,7 +37,7 @@ func pollSwitch(sw *SwitchData, delay float64, timeout time.Duration, sem chan s
 		Version:        gosnmp.Version2c,
 		Timeout:        timeout,
 		Retries:        0,
-		MaxRepetitions: 20,
+		MaxRepetitions: mrep,
 	}
 
 	for {
@@ -46,23 +53,45 @@ func pollSwitch(sw *SwitchData, delay float64, timeout time.Duration, sem chan s
 			continue
 		}
 
-		tables, err := bulkWalkMulti(conn, metricOIDs, 20)
-		if sw.PhysPorts == 0 {
-			if pdus, err := conn.BulkWalkAll(OID_IFNAME); err == nil {
+		sw.mu.RLock()
+		curMaxRep := sw.MaxRepetitions
+		sw.mu.RUnlock()
+		conn.MaxRepetitions = curMaxRep
+
+		tables, err := bulkWalkMulti(conn, metricOIDs, curMaxRep)
+		if err == nil && sw.PhysPorts == 0 {
+			if pdus, errWalk := conn.BulkWalkAll(OID_IFNAME); errWalk == nil {
 				sw.mu.Lock()
 				sw.IfaceCount = len(pdus)
 				sw.mu.Unlock()
+			} else {
+				err = errWalk
 			}
-			if pdus, err := conn.BulkWalkAll(OID_IFTYPE); err == nil {
-				portTypes := map[int]int{}
-				for _, pdu := range pdus {
-					if idx, ok := oidIndex(pdu.Name, OID_IFTYPE); ok {
-						portTypes[idx] = int(snmpUint64(pdu))
+			if err == nil {
+				if pdus, errWalk := conn.BulkWalkAll(OID_IFTYPE); errWalk == nil {
+					portTypes := map[int]int{}
+					for _, pdu := range pdus {
+						if idx, ok := oidIndex(pdu.Name, OID_IFTYPE); ok {
+							portTypes[idx] = int(snmpUint64(pdu))
+						}
 					}
+					sw.mu.Lock()
+					sw.PhysPorts = countPhys(portTypes)
+					// Optimize MaxRepetitions:
+					if sw.PhysPorts > 0 {
+						targetRep := uint32(sw.PhysPorts + 2)
+						if targetRep > 50 {
+							targetRep = 50
+						}
+						if targetRep < 5 {
+							targetRep = 5
+						}
+						sw.MaxRepetitions = targetRep
+					}
+					sw.mu.Unlock()
+				} else {
+					err = errWalk
 				}
-				sw.mu.Lock()
-				sw.PhysPorts = countPhys(portTypes)
-				sw.mu.Unlock()
 			}
 		}
 
@@ -218,6 +247,11 @@ func bulkWalkMulti(conn *gosnmp.GoSNMP, baseOIDs []string, maxRep uint32) (map[s
 	for {
 		resp, err := conn.GetBulk(current, 0, maxRep)
 		if err != nil || resp == nil {
+			// If we haven't collected anything across ANY column yet, return the error.
+			// (Check OID_HCIN as a proxy for 'anything collected')
+			if len(result[baseOIDs[0]]) == 0 {
+				return result, err
+			}
 			break
 		}
 		vars := resp.Variables

@@ -25,6 +25,7 @@ func runBenchmark(switches []map[string]string, sem chan struct{}) {
 		PhysPorts  int
 		IfaceCount int
 		OIDRows    int
+		MaxRep     uint32
 	}
 
 	results := make([]Result, len(switches))
@@ -65,9 +66,21 @@ func runBenchmark(switches []map[string]string, sem chan struct{}) {
 				}
 
 				if iter == 0 {
-					pdus, _ := conn.BulkWalkAll(OID_IFNAME)
+					pdus, err := conn.BulkWalkAll(OID_IFNAME)
+					if err != nil {
+						r.Status = "WALK_ERR"
+						conn.Conn.Close()
+						<-sem
+						break
+					}
 					r.IfaceCount = len(pdus)
-					pdus, _ = conn.BulkWalkAll(OID_IFTYPE)
+					pdus, err = conn.BulkWalkAll(OID_IFTYPE)
+					if err != nil {
+						r.Status = "WALK_ERR"
+						conn.Conn.Close()
+						<-sem
+						break
+					}
 					portTypes := map[int]int{}
 					for _, pdu := range pdus {
 						if idx, ok := oidIndex(pdu.Name, OID_IFTYPE); ok {
@@ -75,14 +88,25 @@ func runBenchmark(switches []map[string]string, sem chan struct{}) {
 						}
 					}
 					r.PhysPorts = countPhys(portTypes)
+					
+					// Optimize MaxRep
+					r.MaxRep = uint32(r.PhysPorts + 2)
+					if r.MaxRep > 50 { r.MaxRep = 50 }
+					if r.MaxRep < 5 { r.MaxRep = 5 }
 				}
 
-				tables, err := bulkWalkMulti(conn, metricOIDs, 20)
+				conn.MaxRepetitions = r.MaxRep
+				tables, err := bulkWalkMulti(conn, metricOIDs, r.MaxRep)
 				conn.Conn.Close()
 				<-sem
 
 				if err != nil {
 					r.Status = "WALK_ERR"
+					break
+				}
+				
+				if len(tables[OID_HCIN]) == 0 {
+					r.Status = "PARTIAL"
 					break
 				}
 				
@@ -113,16 +137,16 @@ func runBenchmark(switches []map[string]string, sem chan struct{}) {
 
 	fmt.Printf("Benchmark: %d switches | samples: %d | wall: %v | semaphore: 50\n\n",
 		len(switches), iterations, wall.Round(time.Millisecond))
-	fmt.Printf("%-*s %-*s %-*s %7s %7s %7s %5s %6s\n",
+	fmt.Printf("%-*s %-*s %-*s %7s %7s %7s %5s %6s %4s\n",
 		bwIP, "IP", bwName, "Name", bwStatus, "Status",
-		"AvgMs", "MaxMs", "Jitter", "Phys", "Ifaces")
-	fmt.Println(strings.Repeat("-", bwIP+bwName+bwStatus+1+7+1+7+1+7+1+5+1+6+5))
+		"AvgMs", "MaxMs", "Jitter", "Phys", "Ifaces", "MRep")
+	fmt.Println(strings.Repeat("-", bwIP+bwName+bwStatus+1+7+1+7+1+7+1+5+1+6+1+4+6))
 
 	for _, r := range results {
 		avg := r.Snmp.total / iterations
 		jitter := r.Snmp.max - r.Snmp.min
-		fmt.Printf("%-*s %-*s %-*s %7d %7d %7d %5d %6d\n",
+		fmt.Printf("%-*s %-*s %-*s %7d %7d %7d %5d %6d %4d\n",
 			bwIP, r.IP, bwName, r.Name, bwStatus, r.Status,
-			avg, r.Snmp.max, jitter, r.PhysPorts, r.IfaceCount)
+			avg, r.Snmp.max, jitter, r.PhysPorts, r.IfaceCount, r.MaxRep)
 	}
 }

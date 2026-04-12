@@ -38,6 +38,7 @@ type SwitchData struct {
 	PhysPorts      int     // ethernetCsmacd + LAG interfaces
 	IfaceCount     int     // all SNMP interfaces
 	SampleInterval float64 // EMA of actual inter-sample time (seconds)
+	MaxRepetitions uint32  // SNMP GetBulk max repetitions
 }
 
 // SaveState holds only the serialisable history (no mutexes or counters).

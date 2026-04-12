@@ -141,6 +141,7 @@ func main() {
 			Rates:          make(map[string]*PortRate),
 			PortHist:       make(map[string]*PortHistory),
 			SampleInterval: *delay,
+			MaxRepetitions: 20,
 		}
 		if saved.HistIn != nil {
 			sd.HistIn = saved.HistIn[sw["ip"]]
@@ -250,6 +251,8 @@ func main() {
 					sortKey = "ip"
 				case e.Rune() == '2', e.Rune() == 'n':
 					sortKey = "name"
+				case e.Rune() == '3', e.Rune() == 's':
+					sortKey = "status"
 				case e.Rune() == 'i':
 					sortKey = "in"
 				case e.Rune() == 'o':
@@ -374,6 +377,18 @@ func main() {
 						m = items[j].SwName
 					}
 					return n < m
+				case "status":
+					if items[i].Status != items[j].Status {
+						// Put OK at the end
+						if items[i].Status == "OK" {
+							return false
+						}
+						if items[j].Status == "OK" {
+							return true
+						}
+						return items[i].Status < items[j].Status
+					}
+					return items[i].EmaOut > items[j].EmaOut
 				}
 				return items[i].EmaOut > items[j].EmaOut
 			})
@@ -426,6 +441,7 @@ func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, w
 		IfaceCount       int
 		LastMs, AvgMs    int64
 		SampleSec        float64
+		MaxRep           uint32
 	}
 	rows := make([]perfRow, len(states))
 	for i, sw := range states {
@@ -440,6 +456,7 @@ func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, w
 			PhysPorts: sw.PhysPorts, IfaceCount: sw.IfaceCount,
 			LastMs: sw.LastPollMs, AvgMs: avg,
 			SampleSec: sw.SampleInterval,
+			MaxRep:    sw.MaxRepetitions,
 		}
 		sw.mu.RUnlock()
 	}
@@ -457,9 +474,9 @@ func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, w
 			pwStatus = l
 		}
 	}
-	hdr := fmt.Sprintf("%-*s %-*s %-*s %6s %6s %5s %6s %8s %8s %8s",
+	hdr := fmt.Sprintf("%-*s %-*s %-*s %6s %6s %5s %6s %8s %8s %8s %4s",
 		pwIP, "IP", pwName, "Name", pwStatus, "Status",
-		"Polls", "Errors", "Phys", "Ifaces", "Last(ms)", "Avg(ms)", "Rate(s)")
+		"Polls", "Errors", "Phys", "Ifaces", "Last(ms)", "Avg(ms)", "Rate(s)", "MRep")
 	drawStr(screen, 0, 0, hdr[:min(len(hdr), w-1)], revStyle)
 	for i, r := range rows {
 		if i >= h-2 {
@@ -469,9 +486,9 @@ func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, w
 		if r.Errors > 0 || r.Status != "OK" {
 			st = warnStyle
 		}
-		line := fmt.Sprintf("%-*s %-*s %-*s %6d %6d %5d %6d %8d %8d %8.1f",
+		line := fmt.Sprintf("%-*s %-*s %-*s %6d %6d %5d %6d %8d %8d %8.1f %4d",
 			pwIP, r.IP, pwName, r.Name, pwStatus, r.Status,
-			r.Polls, r.Errors, r.PhysPorts, r.IfaceCount, r.LastMs, r.AvgMs, r.SampleSec)
+			r.Polls, r.Errors, r.PhysPorts, r.IfaceCount, r.LastMs, r.AvgMs, r.SampleSec, r.MaxRep)
 		drawStr(screen, 0, i+1, line[:min(len(line), w-1)], st)
 	}
 	frozen := "[AUTO]"
@@ -592,7 +609,7 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 		fStr = fmt.Sprintf(" [filter: %s]", filterStr)
 	}
 
-	statusLine := fmt.Sprintf("%s %s %s %s d=%ss z=1/%d%s | q:quit d:det p:perf v:view /:filt i/o/n/a:sort +/-:zoom arrows:scroll SPC:auto",
+	statusLine := fmt.Sprintf("%s %s %s %s d=%ss z=1/%d%s | q:quit d:det p:perf v:view /:filt i/o/n/a/s:sort +/-:zoom arrows:scroll SPC:auto",
 		frozen, vModes[viewMode], sortIndicator, scroll, delayStr, zoom, fStr)
 	drawStr(screen, 0, h-1, statusLine[:min(len(statusLine), w-1)], dimStyle)
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
