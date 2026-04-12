@@ -185,8 +185,9 @@ func main() {
 
 	showDetail := false
 	showPerf := false
+	showTraffic := false
 	sortKey := "out"
-	autoSort := map[string]bool{"main": true, "detail": true, "perf": true}
+	autoSort := map[string]bool{"main": true, "detail": true, "perf": true, "traffic": true}
 	viewMode := 0 // 0: Sparkline, 1: Numeric
 	zoomIdx := 0
 	var viewNow *float64
@@ -204,6 +205,8 @@ func main() {
 		currScreen := "main"
 		if showPerf {
 			currScreen = "perf"
+		} else if showTraffic {
+			currScreen = "traffic"
 		} else if showDetail {
 			currScreen = "detail"
 		}
@@ -239,9 +242,14 @@ func main() {
 					filtering = true
 				case e.Rune() == 'p':
 					showPerf = !showPerf
+					showTraffic = false
+				case e.Rune() == 't':
+					showTraffic = !showTraffic
+					showPerf = false
 				case e.Rune() == 'd':
 					showDetail = !showDetail
 					showPerf = false
+					showTraffic = false
 					prevItems = nil
 				case e.Rune() == ' ':
 					autoSort[currScreen] = !autoSort[currScreen]
@@ -329,6 +337,7 @@ func main() {
 					IP: sw.IP, Name: sw.Name, Status: sw.Status,
 					In: sw.In, Out: sw.Out,
 					EmaIn: sw.EmaIn, EmaOut: sw.EmaOut,
+					MaxIn: sw.MaxIn, MaxOut: sw.MaxOut,
 					Hist: hist, SampleInterval: si,
 					LastPollMs: sw.LastPollMs,
 				})
@@ -351,6 +360,7 @@ func main() {
 							IP: sw.IP, SwName: sw.Name, Port: pname, Status: sw.Status,
 							In: r.In, Out: r.Out,
 							EmaIn: r.EmaIn, EmaOut: r.EmaOut,
+							MaxIn: r.MaxIn, MaxOut: r.MaxOut,
 							Hist: hist, SampleInterval: si, Detail: true,
 							LastPollMs: sw.LastPollMs,
 						})
@@ -427,10 +437,64 @@ func main() {
 			renderPerf(screen, states, h, w, revStyle, warnStyle, defStyle, dimStyle, autoSort["perf"])
 			continue
 		}
+		if showTraffic {
+			renderTraffic(screen, items, h, w, revStyle, warnStyle, defStyle, dimStyle, autoSort["traffic"])
+			continue
+		}
 
 		renderMain(screen, items, h, w, delay, zoom, dispNow, revStyle, defStyle, dimStyle, autoSort[currScreen], viewNow, viewMode, sortKey, filtering, filterStr)
 		screen.Show()
 	}
+}
+
+func renderTraffic(screen tcell.Screen, items []DisplayItem, h, w int, revStyle, warnStyle, defStyle, dimStyle tcell.Style, autoSort bool) {
+	if len(items) == 0 {
+		return
+	}
+
+	headers := []string{"IP", "Name", "IN", "OUT", "Avg IN", "Avg OUT", "Max IN", "Max OUT"}
+	if items[0].Detail {
+		headers[1] = "Port"
+	}
+	// Alignments: -1 for left, 1 for right
+	aligns := []int{-1, -1, 1, 1, 1, 1, 1, 1}
+
+	var rows [][]string
+	for _, item := range items {
+		name := item.Name
+		if item.Detail {
+			name = item.Port
+		}
+		rows = append(rows, []string{
+			item.IP, name,
+			formatRateCompact(item.In), formatRateCompact(item.Out),
+			formatRateCompact(item.EmaIn), formatRateCompact(item.EmaOut),
+			formatRateCompact(item.MaxIn), formatRateCompact(item.MaxOut),
+		})
+	}
+
+	layout := NewTableLayout(headers, rows, aligns, 1)
+	hdr := layout.FormatHeader(headers)
+	drawStr(screen, 0, 0, hdr[:min(len(hdr), w-1)], revStyle)
+
+	for i, item := range items {
+		if i >= h-2 {
+			break
+		}
+		st := defStyle
+		if item.Status != "OK" && item.Status != "WAITING" {
+			st = warnStyle
+		}
+		line := layout.FormatRow(rows[i])
+		drawStr(screen, 0, i+1, line[:min(len(line), w-1)], st)
+	}
+	frozen := "[AUTO]"
+	if !autoSort {
+		frozen = "[FROZEN]"
+	}
+	statusLine := fmt.Sprintf("%s t:hide-traffic q:quit | (Numeric traffic summary; current, 1m avg, and session peak)", frozen)
+	drawStr(screen, 0, h-1, statusLine[:min(len(statusLine), w-1)], dimStyle)
+	screen.Show()
 }
 
 func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, warnStyle, defStyle, dimStyle tcell.Style, autoSort bool) {
@@ -443,14 +507,14 @@ func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, w
 		SampleSec        float64
 		MaxRep           uint32
 	}
-	rows := make([]perfRow, len(states))
+	dataRows := make([]perfRow, len(states))
 	for i, sw := range states {
 		sw.mu.RLock()
 		avg := int64(0)
 		if sw.PollCount > 0 {
 			avg = sw.TotalPollMs / int64(sw.PollCount)
 		}
-		rows[i] = perfRow{
+		dataRows[i] = perfRow{
 			IP: sw.IP, Name: sw.Name, Status: sw.Status,
 			Polls: sw.PollCount, Errors: sw.ErrorCount,
 			PhysPorts: sw.PhysPorts, IfaceCount: sw.IfaceCount,
@@ -460,25 +524,26 @@ func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, w
 		}
 		sw.mu.RUnlock()
 	}
-	sort.Slice(rows, func(i, j int) bool { return rows[i].AvgMs > rows[j].AvgMs })
+	sort.Slice(dataRows, func(i, j int) bool { return dataRows[i].AvgMs > dataRows[j].AvgMs })
 
-	pwIP, pwName, pwStatus := len("IP"), len("Name"), len("Status")
-	for _, r := range rows {
-		if l := len(r.IP); l > pwIP {
-			pwIP = l
-		}
-		if l := len(r.Name); l > pwName {
-			pwName = l
-		}
-		if l := len(r.Status); l > pwStatus {
-			pwStatus = l
-		}
+	headers := []string{"IP", "Name", "Status", "Polls", "Errors", "Phys", "Ifaces", "Last(ms)", "Avg(ms)", "Rate(s)", "MRep"}
+	aligns := []int{-1, -1, -1, 1, 1, 1, 1, 1, 1, 1, 1}
+	var rows [][]string
+	for _, r := range dataRows {
+		rows = append(rows, []string{
+			r.IP, r.Name, r.Status,
+			fmt.Sprintf("%d", r.Polls), fmt.Sprintf("%d", r.Errors),
+			fmt.Sprintf("%d", r.PhysPorts), fmt.Sprintf("%d", r.IfaceCount),
+			fmt.Sprintf("%d", r.LastMs), fmt.Sprintf("%d", r.AvgMs),
+			fmt.Sprintf("%.1f", r.SampleSec), fmt.Sprintf("%d", r.MaxRep),
+		})
 	}
-	hdr := fmt.Sprintf("%-*s %-*s %-*s %6s %6s %5s %6s %8s %8s %8s %4s",
-		pwIP, "IP", pwName, "Name", pwStatus, "Status",
-		"Polls", "Errors", "Phys", "Ifaces", "Last(ms)", "Avg(ms)", "Rate(s)", "MRep")
+
+	layout := NewTableLayout(headers, rows, aligns, 1)
+	hdr := layout.FormatHeader(headers)
 	drawStr(screen, 0, 0, hdr[:min(len(hdr), w-1)], revStyle)
-	for i, r := range rows {
+
+	for i, r := range dataRows {
 		if i >= h-2 {
 			break
 		}
@@ -486,9 +551,7 @@ func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, w
 		if r.Errors > 0 || r.Status != "OK" {
 			st = warnStyle
 		}
-		line := fmt.Sprintf("%-*s %-*s %-*s %6d %6d %5d %6d %8d %8d %8.1f %4d",
-			pwIP, r.IP, pwName, r.Name, pwStatus, r.Status,
-			r.Polls, r.Errors, r.PhysPorts, r.IfaceCount, r.LastMs, r.AvgMs, r.SampleSec, r.MaxRep)
+		line := layout.FormatRow(rows[i])
 		drawStr(screen, 0, i+1, line[:min(len(line), w-1)], st)
 	}
 	frozen := "[AUTO]"
@@ -609,7 +672,7 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 		fStr = fmt.Sprintf(" [filter: %s]", filterStr)
 	}
 
-	statusLine := fmt.Sprintf("%s %s %s %s d=%ss z=1/%d%s | q:quit d:det p:perf v:view /:filt i/o/n/a/s:sort +/-:zoom arrows:scroll SPC:auto",
+	statusLine := fmt.Sprintf("%s %s %s %s d=%ss z=1/%d%s | q:quit d:det p:perf t:traf v:view /:filt i/o/n/a/s:sort +/-:zoom arrows:scroll SPC:auto",
 		frozen, vModes[viewMode], sortIndicator, scroll, delayStr, zoom, fStr)
 	drawStr(screen, 0, h-1, statusLine[:min(len(statusLine), w-1)], dimStyle)
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
