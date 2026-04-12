@@ -73,6 +73,13 @@ func getSwitches(path string) []map[string]string {
 	return result
 }
 
+func matchesFilter(swName, swIP, filterLower string) bool {
+	if filterLower == "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(swName), filterLower) || strings.Contains(strings.ToLower(swIP), filterLower)
+}
+
 func main() {
 	delay := flag.Float64("d", 1.0, "poll interval in seconds (e.g. 0.5, 1, 2)")
 	snmpTimeout := flag.Duration("snmptimeout", 3*time.Second, "SNMP timeout per poll (reduce for sub-second delay)")
@@ -188,6 +195,9 @@ func main() {
 	defer ticker.Stop()
 	defer saveTicker.Stop()
 
+	filtering := false
+	filterStr := ""
+
 	for {
 		// Determine which screen's sort state to use.
 		currScreen := "main"
@@ -203,11 +213,29 @@ func main() {
 		case ev := <-eventCh:
 			switch e := ev.(type) {
 			case *tcell.EventKey:
+				if filtering {
+					if e.Key() == tcell.KeyEsc || e.Key() == tcell.KeyEnter {
+						filtering = false
+						if e.Key() == tcell.KeyEsc {
+							filterStr = ""
+						}
+					} else if e.Key() == tcell.KeyBackspace || e.Key() == tcell.KeyBackspace2 {
+						if len(filterStr) > 0 {
+							filterStr = filterStr[:len(filterStr)-1]
+						}
+					} else if e.Rune() != 0 {
+						filterStr += string(e.Rune())
+					}
+					continue
+				}
+
 				zoom := zoomLevels[zoomIdx]
 				switch {
 				case e.Rune() == 'q':
 					saveState(states, *stateFile)
 					return
+				case e.Rune() == '/':
+					filtering = true
 				case e.Rune() == 'p':
 					showPerf = !showPerf
 				case e.Rune() == 'd':
@@ -281,10 +309,15 @@ func main() {
 		}
 
 		var items []DisplayItem
+		filterLower := strings.ToLower(filterStr)
 		for _, sw := range states {
 			sw.mu.RLock()
 			si := sw.SampleInterval
 			if !showDetail {
+				if !matchesFilter(sw.Name, sw.IP, filterLower) {
+					sw.mu.RUnlock()
+					continue
+				}
 				hist := sw.HistOut
 				if sortKey == "in" {
 					hist = sw.HistIn
@@ -297,6 +330,10 @@ func main() {
 					LastPollMs: sw.LastPollMs,
 				})
 			} else {
+				if !matchesFilter(sw.Name, sw.IP, filterLower) {
+					sw.mu.RUnlock()
+					continue
+				}
 				for pname, r := range sw.Rates {
 					if r.In > 0.1 || r.Out > 0.1 {
 						var hist []Sample
@@ -376,7 +413,7 @@ func main() {
 			continue
 		}
 
-		renderMain(screen, items, h, w, delay, zoom, dispNow, revStyle, defStyle, dimStyle, autoSort[currScreen], viewNow, viewMode, sortKey)
+		renderMain(screen, items, h, w, delay, zoom, dispNow, revStyle, defStyle, dimStyle, autoSort[currScreen], viewNow, viewMode, sortKey, filtering, filterStr)
 		screen.Show()
 	}
 }
@@ -441,12 +478,12 @@ func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, w
 	if !autoSort {
 		frozen = "[FROZEN]"
 	}
-	statusLine := fmt.Sprintf("%s p:hide-perf  q:quit  (sorted by avg poll time; Phys=ethernetCsmacd+LAG, Ifaces=all SNMP)", frozen)
+	statusLine := fmt.Sprintf("%s p:hide-perf q:quit | (Phys=ethernetCsmacd+LAG, Ifaces=all SNMP)", frozen)
 	drawStr(screen, 0, h-1, statusLine[:min(len(statusLine), w-1)], dimStyle)
 	screen.Show()
 }
 
-func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float64, zoom int, dispNow float64, revStyle, defStyle, dimStyle tcell.Style, autoSort bool, viewNow *float64, viewMode int, sortKey string) {
+func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float64, zoom int, dispNow float64, revStyle, defStyle, dimStyle tcell.Style, autoSort bool, viewNow *float64, viewMode int, sortKey string, filtering bool, filterStr string) {
 	wIP, wName := len("IP"), len("Name")
 	wSw, wPort := len("Switch"), len("Port")
 	for _, item := range items {
@@ -547,8 +584,16 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 	vModes := []string{"SPARK", "NUMER"}
 	delayStr := fmt.Sprintf("%.4g", *delay)
 	sortIndicator := fmt.Sprintf("sort:%s", sortKey)
-	statusLine := fmt.Sprintf("%s %s %s %sd=%ss zoom:1/%dx  q:quit d:detail v:view i/o/n/a:sort ARROWS:scroll ENTER:now",
-		frozen, vModes[viewMode], sortIndicator, scroll, delayStr, zoom)
+	
+	fStr := ""
+	if filtering {
+		fStr = fmt.Sprintf(" [FILTER: %s_]", filterStr)
+	} else if filterStr != "" {
+		fStr = fmt.Sprintf(" [filter: %s]", filterStr)
+	}
+
+	statusLine := fmt.Sprintf("%s %s %s %s d=%ss z=1/%d%s | q:quit d:det p:perf v:view /:filt i/o/n/a:sort +/-:zoom arrows:scroll SPC:auto",
+		frozen, vModes[viewMode], sortIndicator, scroll, delayStr, zoom, fStr)
 	drawStr(screen, 0, h-1, statusLine[:min(len(statusLine), w-1)], dimStyle)
 	nowStr := time.Now().Format("2006-01-02 15:04:05")
 	if w-len(nowStr)-1 > len(statusLine)+2 {

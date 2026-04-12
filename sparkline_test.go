@@ -197,3 +197,89 @@ func TestGetSparklineLowTraffic(t *testing.T) {
 		t.Errorf("tiny traffic value should be visible, sparkline was %q", res)
 	}
 }
+
+func TestSparklineResolution(t *testing.T) {
+	// We want to test that very small values map to '.' or '_'
+	// and larger values map to block characters.
+
+	// Max value is 100.0, Low is 0.0 (because low is initialized to 0.0 if not first or no data,
+	// but actually it's calculated from the data in the window).
+	// In the window [88, 90], min is 1.0, max is 100.0.
+	// idx = 1 + int((v-1.0)/(100.0-1.0) * 9)
+	// v=1.0 -> idx=1 ('.')
+	// v=15.0 -> idx=1 + int(14/99 * 9) = 1 + int(1.27) = 2 ('_')
+	// v=100.0 -> idx=10 ('█')
+	history := []Sample{
+		{TS: 90.0, Val: 100.0},
+		{TS: 89.0, Val: 1.0},
+		{TS: 88.0, Val: 15.0},
+	}
+
+	width := 40
+	delay := 1.0
+	zoom := 1
+	now := 100.0
+	sampleInterval := 1.0
+
+	chars, _ := getSparkline(history, width, delay, zoom, now, sampleInterval, 0)
+	res := string(chars)
+
+	t.Logf("Sparkline: %q", res)
+
+	containsDot := false
+	containsUnderscore := false
+	containsFullBlock := false
+
+	for _, r := range chars {
+		if r == '.' {
+			containsDot = true
+		}
+		if r == '_' {
+			containsUnderscore = true
+		}
+		if r == '█' {
+			containsFullBlock = true
+		}
+	}
+
+	if !containsDot {
+		t.Errorf("Sparkline should contain '.' for tiny values, got %q", res)
+	}
+	if !containsUnderscore {
+		t.Errorf("Sparkline should contain '_' for small values, got %q", res)
+	}
+	if !containsFullBlock {
+		t.Errorf("Sparkline should contain '█' for max values, got %q", res)
+	}
+}
+
+func TestSparklineLevels(t *testing.T) {
+	// Test all levels
+	numLevels := 10
+	history := make([]Sample, numLevels+1)
+	for i := 0; i <= numLevels; i++ {
+		history[i] = Sample{TS: float64(100 - i), Val: float64(100 - i*10)}
+	}
+
+	width := 30
+	delay := 1.0
+	zoom := 1
+	now := 101.0
+	sampleInterval := 1.0
+
+	chars, _ := getSparkline(history, width, delay, zoom, now, sampleInterval, 0)
+	res := string(chars)
+	t.Logf("All levels: %q", res)
+
+	uniqueRunes := make(map[rune]bool)
+	for _, r := range chars {
+		if r != ' ' && r != '0' && r != 'm' {
+			uniqueRunes[r] = true
+		}
+	}
+
+	// We expect many different characters
+	if len(uniqueRunes) < 5 {
+		t.Errorf("Expected at least 5 different characters for different levels, got %d: %q", len(uniqueRunes), res)
+	}
+}

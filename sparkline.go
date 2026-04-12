@@ -129,20 +129,25 @@ func getSparkline(history []Sample, width int, delay float64, zoom int, now, sam
 		sparkW = 0
 	}
 
-	blockChars := []rune(" \u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588")
+	// Use more characters for higher vertical resolution.
+	// We add '.' (bottom dot) and '_' (bottom line) as sub-1/8th increments.
+	blockChars := []rune(" ._\u2581\u2582\u2583\u2584\u2585\u2586\u2587\u2588")
+	numLevels := len(blockChars) - 1 // 10 levels above space
+
 	for i := 0; i < sparkW; i++ {
 		if !valid[i] {
 			continue // leave as space
 		}
 		idx := 0
 		if high > low {
-			idx = 1 + int(((data[i]-low)/(high-low))*7)
+			// Map data to range [1, numLevels]
+			idx = 1 + int(((data[i]-low)/(high-low))*float64(numLevels-1))
 		} else if data[i] > 0 {
-			idx = 4 // flat non-zero history -> middle bar
+			idx = numLevels / 2 // flat non-zero history -> middle bar
 		}
 		
 		if idx < 0 { idx = 0 }
-		if idx > 8 { idx = 8 }
+		if idx > numLevels { idx = numLevels }
 		
 		if data[i] == 0 && valid[i] {
 			chars[i] = ' '
