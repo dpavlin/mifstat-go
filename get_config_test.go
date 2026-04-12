@@ -70,3 +70,26 @@ func TestGetCommunity(t *testing.T) {
 		t.Errorf("getCommunity(\"\") with config = %q; want \"secret\"", got)
 	}
 }
+
+func TestGetSlowMs(t *testing.T) {
+	tests := []struct {
+		val      int64
+		delay    float64
+		isSet    bool
+		expected int64
+	}{
+		{500, 1.0, true, 500},   // explicitly set to 500
+		{800, 2.0, true, 800},   // explicitly set to 800
+		{0, 1.0, false, 1000},   // not set, delay 1.0 -> 1000
+		{0, 0.5, false, 500},    // not set, delay 0.5 -> 500
+		{0, 2.0, false, 2000},   // not set, delay 2.0 -> 2000
+		{0, 1.0, true, 0},       // explicitly set to 0 (disabled)
+	}
+
+	for _, tc := range tests {
+		got := getSlowMs(tc.val, tc.delay, tc.isSet)
+		if got != tc.expected {
+			t.Errorf("getSlowMs(val=%d, delay=%.1f, isSet=%v) = %d; want %d", tc.val, tc.delay, tc.isSet, got, tc.expected)
+		}
+	}
+}

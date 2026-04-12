@@ -92,7 +92,7 @@ See `examples/switches.txt.sample` for more details.
 - `-snmptimeout duration`: SNMP timeout per poll (default `3s`).
 - `-log string`: Path to log SNMP errors and performance.
 - `-bench`: Run benchmark mode and exit.
-- `-slowms int`: Log polls slower than this many milliseconds (default `500`).
+- `-slowms int`: Log polls slower than this many milliseconds (defaults to poll interval `-d * 1000`). Use `0` to disable.
 - `-version`: Show version and exit.
 
 ## Development

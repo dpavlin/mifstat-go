@@ -80,17 +80,32 @@ func matchesFilter(swName, swIP, filterLower string) bool {
 	return strings.Contains(strings.ToLower(swName), filterLower) || strings.Contains(strings.ToLower(swIP), filterLower)
 }
 
+func getSlowMs(val int64, delay float64, isSet bool) int64 {
+	if isSet {
+		return val
+	}
+	return int64(delay * 1000)
+}
+
 func main() {
 	delay := flag.Float64("d", 1.0, "poll interval in seconds (e.g. 0.5, 1, 2)")
 	snmpTimeout := flag.Duration("snmptimeout", 3*time.Second, "SNMP timeout per poll (reduce for sub-second delay)")
 	logPath := flag.String("log", "", "log SNMP errors and perf to file (e.g. /tmp/mifstat.log)")
 	bench := flag.Bool("bench", false, "benchmark all switches once and exit (no TUI)")
-	slowMs := flag.Int64("slowms", 500, "log polls slower than this (ms); 0=disable")
+	slowMsFlag := flag.Int64("slowms", 0, "log polls slower than this (ms); defaults to -d * 1000")
 	community := flag.String("c", "", "SNMP community string (overrides ~/.config/snmp.community)")
 	swFile := flag.String("f", "/dev/shm/sw-ip-name-mac", "switch list file (IP NAME [MAC])")
 	stateFile := flag.String("state", "/tmp/mifstat_go.bin", "state file to save history")
 	vFlag := flag.Bool("version", false, "show version and exit")
 	flag.Parse()
+
+	slowMsSet := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "slowms" {
+			slowMsSet = true
+		}
+	})
+	slowMs := getSlowMs(*slowMsFlag, *delay, slowMsSet)
 
 	if *vFlag {
 		fmt.Printf("mifstat version %s\n", version)
@@ -127,7 +142,7 @@ func main() {
 	sem := make(chan struct{}, 50)
 
 	if *bench {
-		runBenchmark(switches, sem, *slowMs)
+		runBenchmark(switches, sem, slowMs)
 		return
 	}
 
@@ -151,7 +166,7 @@ func main() {
 			}
 		}
 		states[i] = sd
-		go pollSwitch(sd, *delay, *snmpTimeout, sem, *slowMs)
+		go pollSwitch(sd, *delay, *snmpTimeout, sem, slowMs)
 	}
 
 	screen, err := tcell.NewScreen()
@@ -339,7 +354,7 @@ func main() {
 					EmaIn: sw.EmaIn, EmaOut: sw.EmaOut,
 					MaxIn: sw.MaxIn, MaxOut: sw.MaxOut,
 					Hist: hist, LatHist: sw.LatHist, SampleInterval: si,
-					LastPollMs: sw.LastPollMs, SlowMs: *slowMs,
+					LastPollMs: sw.LastPollMs, SlowMs: slowMs,
 				})
 			} else {
 				if !matchesFilter(sw.Name, sw.IP, filterLower) {
@@ -362,7 +377,7 @@ func main() {
 							EmaIn: r.EmaIn, EmaOut: r.EmaOut,
 							MaxIn: r.MaxIn, MaxOut: r.MaxOut,
 							Hist: hist, LatHist: sw.LatHist, SampleInterval: si, Detail: true,
-							LastPollMs: sw.LastPollMs, SlowMs: *slowMs,
+							LastPollMs: sw.LastPollMs, SlowMs: slowMs,
 						})
 					}
 				}
