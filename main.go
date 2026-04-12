@@ -151,6 +151,8 @@ func main() {
 
 	saved := loadState(*stateFile)
 	states := make([]*SwitchData, len(switches))
+	maxSamples := int(MAX_HIST_SEC / *delay) + 1
+
 	for i, sw := range switches {
 		sd := &SwitchData{
 			Name:           sw["name"],
@@ -160,13 +162,43 @@ func main() {
 			PortHist:       make(map[string]*PortHistory),
 			SampleInterval: *delay,
 			MaxRepetitions: 20,
+			Timestamps:     NewFloat64Ring(maxSamples),
+			HistIn:         NewFloat32Ring(maxSamples),
+			HistOut:        NewFloat32Ring(maxSamples),
+			LatHist:        NewFloat32Ring(maxSamples),
 		}
 		if saved.HistIn != nil {
-			sd.HistIn = saved.HistIn[sw["ip"]]
-			sd.HistOut = saved.HistOut[sw["ip"]]
-			sd.LatHist = saved.LatHist[sw["ip"]]
-			if ph := saved.PortHist[sw["ip"]]; ph != nil {
-				sd.PortHist = ph
+			ip := sw["ip"]
+			tsList := saved.Timestamps[ip]
+			inList := saved.HistIn[ip]
+			outList := saved.HistOut[ip]
+			latList := saved.LatHist[ip]
+			
+			// Migration/Fallback: if V1, we might not have unified Timestamps map.
+			// But loadState already handles V1 -> SaveState conversion.
+			for j, t := range tsList {
+				sd.Timestamps.Push(t)
+				if j < len(inList) { sd.HistIn.Push(inList[j]) }
+				if j < len(outList) { sd.HistOut.Push(outList[j]) }
+				if j < len(latList) { sd.LatHist.Push(latList[j]) }
+			}
+
+			if phMap := saved.PortHist[ip]; phMap != nil {
+				for pname, phData := range phMap {
+					ph := &PortHistory{
+						In:  NewFloat32Ring(maxSamples),
+						Out: NewFloat32Ring(maxSamples),
+					}
+					// Align port history with timestamps if possible, 
+					// but SaveState already has them as flat slices.
+					for _, v := range phData.In {
+						ph.In.Push(v)
+					}
+					for _, v := range phData.Out {
+						ph.Out.Push(v)
+					}
+					sd.PortHist[pname] = ph
+				}
 			}
 		}
 		states[i] = sd
@@ -348,16 +380,17 @@ func main() {
 					sw.mu.RUnlock()
 					continue
 				}
-				hist := sw.HistOut
+				hist := sw.HistOut.GetAll()
 				if sortKey == "in" {
-					hist = sw.HistIn
+					hist = sw.HistIn.GetAll()
 				}
 				items = append(items, DisplayItem{
 					IP: sw.IP, Name: sw.Name, Status: sw.Status,
 					In: sw.In, Out: sw.Out,
 					EmaIn: sw.EmaIn, EmaOut: sw.EmaOut,
 					MaxIn: sw.MaxIn, MaxOut: sw.MaxOut,
-					Hist: hist, LatHist: sw.LatHist, SampleInterval: si,
+					Timestamps: sw.Timestamps.GetAll(),
+					Hist: hist, LatHist: sw.LatHist.GetAll(), SampleInterval: si,
 					LastPollMs: sw.LastPollMs, SlowMs: slowMs,
 				})
 			} else {
@@ -367,12 +400,12 @@ func main() {
 				}
 				for pname, r := range sw.Rates {
 					if r.In > 0.1 || r.Out > 0.1 {
-						var hist []Sample
+						var hist []float32
 						if ph, ok := sw.PortHist[pname]; ok {
 							if sortKey == "in" {
-								hist = ph.In
+								hist = ph.In.GetAll()
 							} else {
-								hist = ph.Out
+								hist = ph.Out.GetAll()
 							}
 						}
 						items = append(items, DisplayItem{
@@ -380,7 +413,8 @@ func main() {
 							In: r.In, Out: r.Out,
 							EmaIn: r.EmaIn, EmaOut: r.EmaOut,
 							MaxIn: r.MaxIn, MaxOut: r.MaxOut,
-							Hist: hist, LatHist: sw.LatHist, SampleInterval: si, Detail: true,
+							Timestamps: sw.Timestamps.GetAll(),
+							Hist: hist, LatHist: sw.LatHist.GetAll(), SampleInterval: si, Detail: true,
 							LastPollMs: sw.LastPollMs, SlowMs: slowMs,
 						})
 					}
@@ -655,10 +689,10 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 		xSpark := len(lineRunes)
 
 		if viewMode == 1 {
-			numStr := getNumericHistory(item.Hist, dispNow, sparkW, *delay, zoom, item.SampleInterval)
+			numStr := getNumericHistory(item.Timestamps, item.Hist, dispNow, sparkW, *delay, zoom, item.SampleInterval)
 			drawStr(screen, xSpark, i+1, numStr, defStyle)
 		} else {
-			sparkChars, sparkStale := getSparkline(item.Hist, item.LatHist, sparkW, *delay, zoom, dispNow, item.SampleInterval, item.LastPollMs, item.SlowMs)
+			sparkChars, sparkStale := getSparkline(item.Timestamps, item.Hist, item.LatHist, sparkW, *delay, zoom, dispNow, item.SampleInterval, item.LastPollMs, item.SlowMs)
 			for k, ch := range sparkChars {
 				if xSpark+k >= w {
 					break

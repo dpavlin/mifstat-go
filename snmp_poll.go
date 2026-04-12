@@ -105,17 +105,14 @@ func pollSwitch(sw *SwitchData, delay float64, timeout time.Duration, sem chan s
 		sw.PollCount++
 		
 		now := float64(t0.UnixNano()) / 1e9
-		sw.LatHist = append(sw.LatHist, Sample{now, float64(sw.LastPollMs)})
-		sw.LatHist = pruneSamples(sw.LatHist, now)
+		sw.LatHist.Push(float32(sw.LastPollMs))
 
 		if err != nil {
 			sw.Status = "WALK_ERR"
 			sw.ErrorCount++
-			now := float64(t0.UnixNano()) / 1e9
-			sw.HistIn = append(sw.HistIn, Sample{now, -1.0})
-			sw.HistOut = append(sw.HistOut, Sample{now, -1.0})
-			sw.HistIn = pruneSamples(sw.HistIn, now)
-			sw.HistOut = pruneSamples(sw.HistOut, now)
+			sw.Timestamps.Push(now)
+			sw.HistIn.Push(-1.0)
+			sw.HistOut.Push(-1.0)
 		} else {
 			if len(tables[OID_HCIN]) == 0 {
 				sw.Status = "PARTIAL"
@@ -123,7 +120,6 @@ func pollSwitch(sw *SwitchData, delay float64, timeout time.Duration, sem chan s
 			} else {
 				sw.Status = "OK"
 			}
-			now := float64(t0.UnixNano()) / 1e9
 			processSamples(sw, tables, now, delay)
 		}
 		sw.mu.Unlock()
@@ -212,13 +208,16 @@ func processSamples(sw *SwitchData, tables map[string]map[int]uint64, now, delay
 			hasHistory = true
 
 			if sw.PortHist[pname] == nil {
-				sw.PortHist[pname] = &PortHistory{}
+				// Initialize with same capacity as switch rings
+				cap := len(sw.Timestamps.Data)
+				if cap == 0 { cap = 21600 } // fallback
+				sw.PortHist[pname] = &PortHistory{
+					In: NewFloat32Ring(cap),
+					Out: NewFloat32Ring(cap),
+				}
 			}
-			sw.PortHist[pname].In = append(sw.PortHist[pname].In, Sample{now, rin})
-			sw.PortHist[pname].Out = append(sw.PortHist[pname].Out, Sample{now, rout})
-			// Prune
-			sw.PortHist[pname].In = pruneSamples(sw.PortHist[pname].In, now)
-			sw.PortHist[pname].Out = pruneSamples(sw.PortHist[pname].Out, now)
+			sw.PortHist[pname].In.Push(float32(rin))
+			sw.PortHist[pname].Out.Push(float32(rout))
 		}
 		sw.prevCounters[pname] = [2]uint64{cin, cout}
 	}
@@ -236,24 +235,10 @@ func processSamples(sw *SwitchData, tables map[string]map[int]uint64, now, delay
 	if totalOut > sw.MaxOut {
 		sw.MaxOut = totalOut
 	}
-	sw.HistIn = append(sw.HistIn, Sample{now, totalIn})
-	sw.HistOut = append(sw.HistOut, Sample{now, totalOut})
-	sw.HistIn = pruneSamples(sw.HistIn, now)
-	sw.HistOut = pruneSamples(sw.HistOut, now)
-}
-
-func pruneSamples(s []Sample, now float64) []Sample {
-	cutoff := now - MAX_HIST_SEC
-	i := 0
-	for ; i < len(s); i++ {
-		if s[i].TS >= cutoff {
-			break
-		}
-	}
-	if i > 0 {
-		return s[i:]
-	}
-	return s
+	
+	sw.Timestamps.Push(now)
+	sw.HistIn.Push(float32(totalIn))
+	sw.HistOut.Push(float32(totalOut))
 }
 
 type SnmpClient interface {

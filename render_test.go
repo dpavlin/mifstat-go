@@ -20,6 +20,8 @@ func TestRenderTraffic(t *testing.T) {
 			IP: "10.0.0.1", Name: "sw1", In: 100, Out: 200,
 			EmaIn: 100, EmaOut: 200, MaxIn: 1000, MaxOut: 2000,
 			Status: "OK",
+			Timestamps: []float64{100.0, 101.0},
+			Hist: []float32{10.0, 20.0},
 		},
 	}
 

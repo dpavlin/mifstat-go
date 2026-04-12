@@ -11,7 +11,7 @@ var zoomLevels = []int{1, 2, 5, 10, 30, 60, 120}
 
 // getSparkline renders history as block-character sparkline cells.
 // Returns (chars, staleFlags): stale cells should be rendered with dimStyle.
-func getSparkline(history, latHistory []Sample, width int, delay float64, zoom int, now, sampleInterval float64, lastPollMs int64, slowMs int64) (chars []rune, staleFlags []bool) {
+func getSparkline(timestamps []float64, history, latHistory []float32, width int, delay float64, zoom int, now, sampleInterval float64, lastPollMs int64, slowMs int64) (chars []rune, staleFlags []bool) {
 	chars = make([]rune, width)
 	staleFlags = make([]bool, width)
 	for i := range chars {
@@ -27,21 +27,22 @@ func getSparkline(history, latHistory []Sample, width int, delay float64, zoom i
 	startTime := now - float64(width)*pixelSec
 
 	// Build buckets: aligned time slot → max value in that slot.
-	buckets := make(map[float64]float64)
-	for _, s := range history {
-		if s.TS < startTime {
+	buckets := make(map[float64]float32)
+	for i, ts := range timestamps {
+		if i >= len(history) { break }
+		if ts < startTime {
 			continue
 		}
-		tb := math.Floor(s.TS/pixelSec) * pixelSec
+		tb := math.Floor(ts/pixelSec) * pixelSec
 		v, ok := buckets[tb]
 		if !ok {
-			buckets[tb] = s.Val
+			buckets[tb] = history[i]
 		} else {
 			// Special handling for errors: if any sample in bucket is an error, show it as an error.
-			if s.Val == -1.0 || v == -1.0 {
+			if history[i] == -1.0 || v == -1.0 {
 				buckets[tb] = -1.0
-			} else if s.Val > v {
-				buckets[tb] = s.Val
+			} else if history[i] > v {
+				buckets[tb] = history[i]
 			}
 		}
 	}
@@ -49,12 +50,13 @@ func getSparkline(history, latHistory []Sample, width int, delay float64, zoom i
 	// Build latency buckets: true if any poll in that bucket was "slow"
 	slowBuckets := make(map[float64]bool)
 	if slowMs > 0 {
-		for _, s := range latHistory {
-			if s.TS < startTime {
+		for i, ts := range timestamps {
+			if i >= len(latHistory) { break }
+			if ts < startTime {
 				continue
 			}
-			if s.Val > float64(slowMs) {
-				tb := math.Floor(s.TS/pixelSec) * pixelSec
+			if latHistory[i] > float32(slowMs) {
+				tb := math.Floor(ts/pixelSec) * pixelSec
 				slowBuckets[tb] = true
 			}
 		}
@@ -79,7 +81,7 @@ func getSparkline(history, latHistory []Sample, width int, delay float64, zoom i
 	// But don't stretch so far that we hide real long-term data loss.
 	persistSec = math.Min(persistSec, 30.0*float64(zoom))
 
-	data := make([]float64, width)
+	data := make([]float32, width)
 	valid := make([]bool, width)
 	stale := make([]bool, width) // true = pixel is in the right-edge gap
 
@@ -90,7 +92,8 @@ func getSparkline(history, latHistory []Sample, width int, delay float64, zoom i
 			data[i], valid[i] = v, true
 		} else {
 			// Find most recent sample strictly before this pixel.
-			var lastT, lastV float64
+			var lastT float64
+			var lastV float32
 			found := false
 			for t, v := range buckets {
 				if t < tp && (!found || t > lastT) {
@@ -108,7 +111,7 @@ func getSparkline(history, latHistory []Sample, width int, delay float64, zoom i
 	}
 
 	// Normalise across all valid pixels (fresh and stale share the same scale).
-	high, low := 1.0, 0.0
+	high, low := float32(1.0), float32(0.0)
 	first := true
 	for i, v := range data {
 		if !valid[i] {
@@ -164,7 +167,7 @@ func getSparkline(history, latHistory []Sample, width int, delay float64, zoom i
 		idx := 0
 		if high > low {
 			// Map data to range [1, numLevels]
-			idx = 1 + int(((data[i]-low)/(high-low))*float64(numLevels-1))
+			idx = 1 + int(((data[i]-low)/(high-low))*float32(numLevels-1))
 		} else if data[i] > 0 {
 			idx = numLevels / 2 // flat non-zero history -> middle bar
 		}
@@ -224,26 +227,26 @@ func getNumericHeader(width int, delay float64, zoom int) string {
 	return sb.String()
 }
 
-func getNumericHistory(history []Sample, now float64, width int, delay float64, zoom int, sampleInterval float64) string {
-	if width < 10 {
+func getNumericHistory(timestamps []float64, history []float32, now float64, width int, delay float64, zoom int, sampleInterval float64) string {
+	if width < 10 || len(history) == 0 {
 		return ""
 	}
 	colW := 9
 	numCols := width / colW
-	// USE GLOBAL UNIFIED TIME STEP FOR VERTICAL ALIGNMENT.
 	pixelSec := delay * float64(zoom)
 
 	var sb strings.Builder
 	for i := 0; i < numCols; i++ {
 		targetTS := now - float64(i)*pixelSec
-		val := -1.0
+		val := float32(-1.0)
 		// Find closest sample <= targetTS
-		for j := len(history) - 1; j >= 0; j-- {
-			if history[j].TS <= targetTS {
+		for j := len(timestamps) - 1; j >= 0; j-- {
+			if j >= len(history) { continue }
+			if timestamps[j] <= targetTS {
 				// Persist logic: only show value if it's within a reasonable window of the target time
 				persistLimit := math.Max(60.0, pixelSec*1.5)
-				if (targetTS - history[j].TS) < persistLimit {
-					val = history[j].Val
+				if (targetTS - timestamps[j]) < persistLimit {
+					val = history[j]
 				}
 				break
 			}
@@ -254,7 +257,7 @@ func getNumericHistory(history []Sample, now float64, width int, delay float64, 
 			s = fmt.Sprintf("%*s", colW, "-")
 		} else {
 			// Format using simpler compact version for the grid to fit in colW (9)
-			s = fmt.Sprintf("%*s", colW, formatRateCompact(val))
+			s = fmt.Sprintf("%*s", colW, formatRateCompact(float64(val)))
 		}
 		sb.WriteString(s)
 	}

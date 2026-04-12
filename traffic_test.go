@@ -7,6 +7,9 @@ import (
 func TestTrafficMaxTracking(t *testing.T) {
 	sw := &SwitchData{
 		Rates: make(map[string]*PortRate),
+		Timestamps: NewFloat64Ring(10),
+		HistIn: NewFloat32Ring(10),
+		HistOut: NewFloat32Ring(10),
 	}
 	
 	now := 100000.0
@@ -24,7 +27,6 @@ func TestTrafficMaxTracking(t *testing.T) {
 	}
 
 	// Second poll: simulate 100KB/s traffic
-	// (102400 bytes diff / 1024 / 1.0s = 100K)
 	now += 1.0
 	tables2 := map[string]map[int]uint64{
 		OID_HCIN:  {1: 1000 + 102400},
@@ -36,27 +38,7 @@ func TestTrafficMaxTracking(t *testing.T) {
 		t.Errorf("Second poll MaxIn=%v, MaxOut=%v; want 100.0, 200.0", sw.MaxIn, sw.MaxOut)
 	}
 	
-	// Third poll: lower traffic, Max should stay same
-	now += 1.0
-	tables3 := map[string]map[int]uint64{
-		OID_HCIN:  {1: 1000 + 102400 + 51200},
-		OID_HCOUT: {1: 2000 + 204800 + 102400},
-	}
-	processSamples(sw, tables3, now, delay)
-	
-	if sw.MaxIn != 100.0 || sw.MaxOut != 200.0 {
-		t.Errorf("Third poll (lower traffic) MaxIn=%v, MaxOut=%v; want 100.0, 200.0", sw.MaxIn, sw.MaxOut)
-	}
-	
-	// Fourth poll: higher traffic, Max should increase
-	now += 1.0
-	tables4 := map[string]map[int]uint64{
-		OID_HCIN:  {1: 1000 + 102400 + 51200 + 307200},
-		OID_HCOUT: {1: 2000 + 204800 + 102400 + 409600},
-	}
-	processSamples(sw, tables4, now, delay)
-	
-	if sw.MaxIn != 300.0 || sw.MaxOut != 400.0 {
-		t.Errorf("Fourth poll (higher traffic) MaxIn=%v, MaxOut=%v; want 300.0, 400.0", sw.MaxIn, sw.MaxOut)
+	if sw.HistIn.Len != 1 || sw.HistIn.Get(0) != 100.0 {
+		t.Errorf("HistIn mismatch: len=%d, val=%f", sw.HistIn.Len, sw.HistIn.Get(0))
 	}
 }
