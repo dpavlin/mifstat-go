@@ -15,13 +15,15 @@ func TestRenderTraffic(t *testing.T) {
 
 	screen.SetSize(80, 24)
 
+	ts := NewFloat64Ring(10); ts.Push(100.0)
+	hi := NewFloat32Ring(10); hi.Push(10.0)
 	items := []DisplayItem{
 		{
 			IP: "10.0.0.1", Name: "sw1", In: 100, Out: 200,
 			EmaIn: 100, EmaOut: 200, MaxIn: 1000, MaxOut: 2000,
 			Status: "OK",
-			Timestamps: []float64{100.0, 101.0},
-			Hist: []float32{10.0, 20.0},
+			TimestampsRing: &ts,
+			HistRing:       &hi,
 		},
 	}
 

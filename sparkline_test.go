@@ -26,10 +26,14 @@ func TestGetNumericHistory(t *testing.T) {
 	zoom := 1
 	width := 40
 	sampleInterval := 1.0
-	timestamps := []float64{100.0, 101.0, 102.0, 103.0, 104.0, 105.0}
-	history := []float32{10, 20, 30, 40, 50, 60}
+	ts := NewFloat64Ring(10)
+	hi := NewFloat32Ring(10)
+	for i := 0; i <= 5; i++ {
+		ts.Push(100.0 + float64(i))
+		hi.Push(float32(10 * (i + 1)))
+	}
 	
-	histStr := getNumericHistory(timestamps, history, now, width, delay, zoom, sampleInterval)
+	histStr := getNumericHistory(&ts, &hi, now, width, delay, zoom, sampleInterval)
 	
 	// We expect the most recent values at the left
 	if !strings.Contains(histStr, "60") {
@@ -72,10 +76,14 @@ func TestGetSparkline(t *testing.T) {
 	zoom := 1
 	now := 105.0
 	sampleInterval := 1.0
-	timestamps := []float64{100.0, 101.0, 102.0, 103.0, 104.0, 105.0}
-	history := []float32{10, 20, 30, 40, 50, 60}
+	ts := NewFloat64Ring(10)
+	hi := NewFloat32Ring(10)
+	for i := 0; i <= 5; i++ {
+		ts.Push(100.0 + float64(i))
+		hi.Push(float32(10 * (i + 1)))
+	}
 
-	chars, stale := getSparkline(timestamps, history, nil, width, delay, zoom, now, sampleInterval, 0, 0)
+	chars, stale := getSparkline(&ts, &hi, nil, width, delay, zoom, now, sampleInterval, 0, 0)
 	if len(chars) != width {
 		t.Errorf("sparkline length %d, want %d", len(chars), width)
 	}
@@ -92,10 +100,10 @@ func TestGetSparklineStatus(t *testing.T) {
 
 	// Case 1: Fresh data (age = 0s), should show latency
 	nowFresh := 1000.0
-	timestamps := []float64{1000.0}
-	history := []float32{10.0}
+	ts := NewFloat64Ring(10); ts.Push(1000.0)
+	hi := NewFloat32Ring(10); hi.Push(10.0)
 	latency := int64(45)
-	chars, _ := getSparkline(timestamps, history, nil, width, delay, zoom, nowFresh, sampleInterval, latency, 0)
+	chars, _ := getSparkline(&ts, &hi, nil, width, delay, zoom, nowFresh, sampleInterval, latency, 0)
 	res := string(chars)
 	if !strings.Contains(res, "45m") {
 		t.Errorf("fresh sparkline should contain latency '45m', got %q", res)
@@ -103,7 +111,7 @@ func TestGetSparklineStatus(t *testing.T) {
 
 	// Case 2: Stale data (age = 10s), should show age
 	nowStale := 1010.0
-	charsS, _ := getSparkline(timestamps, history, nil, width, delay, zoom, nowStale, sampleInterval, latency, 0)
+	charsS, _ := getSparkline(&ts, &hi, nil, width, delay, zoom, nowStale, sampleInterval, latency, 0)
 	resS := string(charsS)
 	if !strings.Contains(resS, "10s") {
 		t.Errorf("stale sparkline should contain age '10s', got %q", resS)
@@ -117,14 +125,14 @@ func TestGetSparklineAdaptiveGap(t *testing.T) {
 	width := 30
 	zoom := 1
 
-	// Switch responds every 2s
-	timestamps := []float64{100.0, 102.0, 104.0}
-	history := []float32{10, 20, 30}
+	ts := NewFloat64Ring(10)
+	hi := NewFloat32Ring(10)
+	for _, t := range []float64{100.0, 102.0, 104.0} { ts.Push(t) }
+	for _, v := range []float32{10, 20, 30} { hi.Push(v) }
 
-	chars, _ := getSparkline(timestamps, history, nil, width, delay, zoom, now, sampleInterval, 0, 0)
+	chars, _ := getSparkline(&ts, &hi, nil, width, delay, zoom, now, sampleInterval, 0, 0)
 	res := string(chars)
 
-	// Check continuity between the first and last rendered data point
 	foundAny := false
 	for _, r := range chars {
 		if r != ' ' && r != '0' && r != 'm' {
@@ -143,10 +151,10 @@ func TestGetSparklineLowTraffic(t *testing.T) {
 	zoom := 1
 	now := 105.0
 	sampleInterval := 1.0
-	timestamps := []float64{100.0}
-	history := []float32{100.0}
+	ts := NewFloat64Ring(10); ts.Push(100.0)
+	hi := NewFloat32Ring(10); hi.Push(100.0)
 
-	chars, _ := getSparkline(timestamps, history, nil, width, delay, zoom, now, sampleInterval, 0, 0)
+	chars, _ := getSparkline(&ts, &hi, nil, width, delay, zoom, now, sampleInterval, 0, 0)
 	res := string(chars)
 
 	foundData := false
@@ -162,8 +170,10 @@ func TestGetSparklineLowTraffic(t *testing.T) {
 }
 
 func TestSparklineResolution(t *testing.T) {
-	history := []float32{100.0, 1.0, 15.0}
-	timestamps := []float64{90.0, 89.0, 88.0}
+	ts := NewFloat64Ring(10)
+	hi := NewFloat32Ring(10)
+	for _, t := range []float64{90.0, 89.0, 88.0} { ts.Push(t) }
+	for _, v := range []float32{100.0, 1.0, 15.0} { hi.Push(v) }
 
 	width := 40
 	delay := 1.0
@@ -171,7 +181,7 @@ func TestSparklineResolution(t *testing.T) {
 	now := 100.0
 	sampleInterval := 1.0
 
-	chars, _ := getSparkline(timestamps, history, nil, width, delay, zoom, now, sampleInterval, 0, 0)
+	chars, _ := getSparkline(&ts, &hi, nil, width, delay, zoom, now, sampleInterval, 0, 0)
 	res := string(chars)
 
 	t.Logf("Sparkline: %q", res)
@@ -191,8 +201,10 @@ func TestSparklineResolution(t *testing.T) {
 }
 
 func TestSparklineErrors(t *testing.T) {
-	history := []float32{100.0, -1.0, 50.0}
-	timestamps := []float64{90.0, 85.0, 80.0}
+	ts := NewFloat64Ring(10)
+	hi := NewFloat32Ring(10)
+	for _, t := range []float64{90.0, 85.0, 80.0} { ts.Push(t) }
+	for _, v := range []float32{100.0, -1.0, 50.0} { hi.Push(v) }
 
 	width := 40
 	delay := 1.0
@@ -200,7 +212,7 @@ func TestSparklineErrors(t *testing.T) {
 	now := 100.0
 	sampleInterval := 1.0
 
-	chars, _ := getSparkline(timestamps, history, nil, width, delay, zoom, now, sampleInterval, 0, 0)
+	chars, _ := getSparkline(&ts, &hi, nil, width, delay, zoom, now, sampleInterval, 0, 0)
 	res := string(chars)
 
 	foundError := false
@@ -217,9 +229,12 @@ func TestSparklineErrors(t *testing.T) {
 }
 
 func TestSparklineDelays(t *testing.T) {
-	history := []float32{100.0, 50.0, 20.0}
-	timestamps := []float64{90.0, 85.0, 80.0}
-	latencies := []float32{10.0, 800.0, 10.0} // Slow poll (> 500ms)
+	ts := NewFloat64Ring(10)
+	hi := NewFloat32Ring(10)
+	lat := NewFloat32Ring(10)
+	for _, t := range []float64{90.0, 85.0, 80.0} { ts.Push(t) }
+	for _, v := range []float32{100.0, 50.0, 20.0} { hi.Push(v) }
+	for _, v := range []float32{10.0, 800.0, 10.0} { lat.Push(v) }
 
 	width := 40
 	delay := 1.0
@@ -227,7 +242,7 @@ func TestSparklineDelays(t *testing.T) {
 	now := 100.0
 	sampleInterval := 1.0
 
-	chars, _ := getSparkline(timestamps, history, latencies, width, delay, zoom, now, sampleInterval, 0, 500)
+	chars, _ := getSparkline(&ts, &hi, &lat, width, delay, zoom, now, sampleInterval, 0, 500)
 	res := string(chars)
 
 	foundSlow := false

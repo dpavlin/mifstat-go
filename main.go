@@ -380,19 +380,21 @@ func main() {
 					sw.mu.RUnlock()
 					continue
 				}
-				hist := sw.HistOut.GetAll()
-				if sortKey == "in" {
-					hist = sw.HistIn.GetAll()
-				}
 				items = append(items, DisplayItem{
 					IP: sw.IP, Name: sw.Name, Status: sw.Status,
 					In: sw.In, Out: sw.Out,
 					EmaIn: sw.EmaIn, EmaOut: sw.EmaOut,
 					MaxIn: sw.MaxIn, MaxOut: sw.MaxOut,
-					Timestamps: sw.Timestamps.GetAll(),
-					Hist: hist, LatHist: sw.LatHist.GetAll(), SampleInterval: si,
-					LastPollMs: sw.LastPollMs, SlowMs: slowMs,
+					TimestampsRing: &sw.Timestamps,
+					HistRing:       &sw.HistOut,
+					LatHistRing:    &sw.LatHist,
+					SwSampleInterval: si,
+					SwLastPollMs:     sw.LastPollMs,
+					SlowMs:           slowMs,
 				})
+				if sortKey == "in" {
+					items[len(items)-1].HistRing = &sw.HistIn
+				}
 			} else {
 				if !matchesFilter(sw.Name, sw.IP, filterLower) {
 					sw.mu.RUnlock()
@@ -400,12 +402,11 @@ func main() {
 				}
 				for pname, r := range sw.Rates {
 					if r.In > 0.1 || r.Out > 0.1 {
-						var hist []float32
+						var histRing *Float32Ring
 						if ph, ok := sw.PortHist[pname]; ok {
+							histRing = &ph.Out
 							if sortKey == "in" {
-								hist = ph.In.GetAll()
-							} else {
-								hist = ph.Out.GetAll()
+								histRing = &ph.In
 							}
 						}
 						items = append(items, DisplayItem{
@@ -413,9 +414,13 @@ func main() {
 							In: r.In, Out: r.Out,
 							EmaIn: r.EmaIn, EmaOut: r.EmaOut,
 							MaxIn: r.MaxIn, MaxOut: r.MaxOut,
-							Timestamps: sw.Timestamps.GetAll(),
-							Hist: hist, LatHist: sw.LatHist.GetAll(), SampleInterval: si, Detail: true,
-							LastPollMs: sw.LastPollMs, SlowMs: slowMs,
+							TimestampsRing: &sw.Timestamps,
+							HistRing:       histRing,
+							LatHistRing:    &sw.LatHist,
+							SwSampleInterval: si,
+							SwLastPollMs:     sw.LastPollMs,
+							SlowMs:           slowMs,
+							Detail:         true,
 						})
 					}
 				}
@@ -495,7 +500,7 @@ func main() {
 			continue
 		}
 
-		renderMain(screen, items, h, w, delay, zoom, dispNow, revStyle, defStyle, dimStyle, autoSort[currScreen], viewNow, viewMode, sortKey, filtering, filterStr)
+		renderMain(screen, items, h, w, delay, zoom, dispNow, revStyle, defStyle, dimStyle, autoSort[currScreen], viewNow, viewMode, sortKey, filtering, filterStr, slowMs)
 		screen.Show()
 	}
 }
@@ -616,7 +621,7 @@ func renderPerf(screen tcell.Screen, states []*SwitchData, h, w int, revStyle, w
 	screen.Show()
 }
 
-func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float64, zoom int, dispNow float64, revStyle, defStyle, dimStyle tcell.Style, autoSort bool, viewNow *float64, viewMode int, sortKey string, filtering bool, filterStr string) {
+func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float64, zoom int, dispNow float64, revStyle, defStyle, dimStyle tcell.Style, autoSort bool, viewNow *float64, viewMode int, sortKey string, filtering bool, filterStr string, slowMs int64) {
 	wIP, wName := len("IP"), len("Name")
 	wSw, wPort := len("Switch"), len("Port")
 	for _, item := range items {
@@ -688,11 +693,14 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 		}
 		xSpark := len(lineRunes)
 
+		swSampleInterval := item.SwSampleInterval
+		swLastPollMs := item.SwLastPollMs
+
 		if viewMode == 1 {
-			numStr := getNumericHistory(item.Timestamps, item.Hist, dispNow, sparkW, *delay, zoom, item.SampleInterval)
+			numStr := getNumericHistory(item.TimestampsRing, item.HistRing, dispNow, sparkW, *delay, zoom, swSampleInterval)
 			drawStr(screen, xSpark, i+1, numStr, defStyle)
 		} else {
-			sparkChars, sparkStale := getSparkline(item.Timestamps, item.Hist, item.LatHist, sparkW, *delay, zoom, dispNow, item.SampleInterval, item.LastPollMs, item.SlowMs)
+			sparkChars, sparkStale := getSparkline(item.TimestampsRing, item.HistRing, item.LatHistRing, sparkW, *delay, zoom, dispNow, swSampleInterval, swLastPollMs, slowMs)
 			for k, ch := range sparkChars {
 				if xSpark+k >= w {
 					break

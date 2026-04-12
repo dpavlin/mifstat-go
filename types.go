@@ -135,12 +135,12 @@ type DisplayItem struct {
 	EmaIn, EmaOut                  float64
 	MaxIn, MaxOut                  float64
 	
-	Timestamps                     []float64
-	Hist                           []float32
-	LatHist                        []float32
+	TimestampsRing                 *Float64Ring
+	HistRing                       *Float32Ring
+	LatHistRing                    *Float32Ring
 	
-	SampleInterval                 float64
-	LastPollMs                     int64
+	SwSampleInterval               float64
+	SwLastPollMs                   int64
 	SlowMs                         int64
 	Detail                         bool
 }

@@ -11,51 +11,52 @@ var zoomLevels = []int{1, 2, 5, 10, 30, 60, 120}
 
 // getSparkline renders history as block-character sparkline cells.
 // Returns (chars, staleFlags): stale cells should be rendered with dimStyle.
-func getSparkline(timestamps []float64, history, latHistory []float32, width int, delay float64, zoom int, now, sampleInterval float64, lastPollMs int64, slowMs int64) (chars []rune, staleFlags []bool) {
+func getSparkline(timestamps *Float64Ring, history, latHistory *Float32Ring, width int, delay float64, zoom int, now, sampleInterval float64, lastPollMs int64, slowMs int64) (chars []rune, staleFlags []bool) {
 	chars = make([]rune, width)
 	staleFlags = make([]bool, width)
 	for i := range chars {
 		chars[i] = ' '
 	}
-	if width <= 0 || len(history) == 0 {
+	if width <= 0 || history.Len == 0 {
 		return
 	}
 
 	// USE GLOBAL UNIFIED TIME STEP FOR VERTICAL ALIGNMENT.
-	// One pixel MUST represent the same amount of time for all rows.
 	pixelSec := delay * float64(zoom)
 	startTime := now - float64(width)*pixelSec
 
 	// Build buckets: aligned time slot → max value in that slot.
 	buckets := make(map[float64]float32)
-	for i, ts := range timestamps {
-		if i >= len(history) { break }
+	for i := 0; i < timestamps.Len; i++ {
+		ts := timestamps.Get(i)
+		val := history.Get(i)
 		if ts < startTime {
 			continue
 		}
 		tb := math.Floor(ts/pixelSec) * pixelSec
 		v, ok := buckets[tb]
 		if !ok {
-			buckets[tb] = history[i]
+			buckets[tb] = val
 		} else {
-			// Special handling for errors: if any sample in bucket is an error, show it as an error.
-			if history[i] == -1.0 || v == -1.0 {
+			if val == -1.0 || v == -1.0 {
 				buckets[tb] = -1.0
-			} else if history[i] > v {
-				buckets[tb] = history[i]
+			} else if val > v {
+				buckets[tb] = val
 			}
 		}
 	}
 
 	// Build latency buckets: true if any poll in that bucket was "slow"
 	slowBuckets := make(map[float64]bool)
-	if slowMs > 0 {
-		for i, ts := range timestamps {
-			if i >= len(latHistory) { break }
+	if slowMs > 0 && latHistory != nil {
+		for i := 0; i < timestamps.Len; i++ {
+			ts := timestamps.Get(i)
+			if i >= latHistory.Len { break }
+			val := latHistory.Get(i)
 			if ts < startTime {
 				continue
 			}
-			if latHistory[i] > float32(slowMs) {
+			if val > float32(slowMs) {
 				tb := math.Floor(ts/pixelSec) * pixelSec
 				slowBuckets[tb] = true
 			}
@@ -226,9 +227,8 @@ func getNumericHeader(width int, delay float64, zoom int) string {
 	}
 	return sb.String()
 }
-
-func getNumericHistory(timestamps []float64, history []float32, now float64, width int, delay float64, zoom int, sampleInterval float64) string {
-	if width < 10 || len(history) == 0 {
+func getNumericHistory(timestamps *Float64Ring, history *Float32Ring, now float64, width int, delay float64, zoom int, sampleInterval float64) string {
+	if width < 10 || history.Len == 0 {
 		return ""
 	}
 	colW := 9
@@ -240,13 +240,13 @@ func getNumericHistory(timestamps []float64, history []float32, now float64, wid
 		targetTS := now - float64(i)*pixelSec
 		val := float32(-1.0)
 		// Find closest sample <= targetTS
-		for j := len(timestamps) - 1; j >= 0; j-- {
-			if j >= len(history) { continue }
-			if timestamps[j] <= targetTS {
+		for j := timestamps.Len - 1; j >= 0; j-- {
+			ts := timestamps.Get(j)
+			if ts <= targetTS {
 				// Persist logic: only show value if it's within a reasonable window of the target time
 				persistLimit := math.Max(60.0, pixelSec*1.5)
-				if (targetTS - timestamps[j]) < persistLimit {
-					val = history[j]
+				if (targetTS - ts) < persistLimit {
+					val = history.Get(j)
 				}
 				break
 			}
