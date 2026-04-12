@@ -100,7 +100,7 @@ func TestGetSparkline(t *testing.T) {
 	now := 105.0
 	sampleInterval := 1.0
 
-	chars, stale := getSparkline(history, width, delay, zoom, now, sampleInterval, 45)
+	chars, stale := getSparkline(history, nil, width, delay, zoom, now, sampleInterval, 0, 0)
 	if len(chars) != width {
 		t.Errorf("sparkline length %d, want %d", len(chars), width)
 	}
@@ -119,7 +119,7 @@ func TestGetSparklineStatus(t *testing.T) {
 	// Case 1: Fresh data (age = 0s), should show latency
 	nowFresh := 1000.0
 	latency := int64(45)
-	chars, _ := getSparkline(history, width, delay, zoom, nowFresh, sampleInterval, latency)
+	chars, _ := getSparkline(history, nil, width, delay, zoom, nowFresh, sampleInterval, latency, 0)
 	res := string(chars)
 	if !strings.Contains(res, "45m") {
 		t.Errorf("fresh sparkline should contain latency '45m', got %q", res)
@@ -127,7 +127,7 @@ func TestGetSparklineStatus(t *testing.T) {
 
 	// Case 2: Stale data (age = 10s), should show age
 	nowStale := 1010.0
-	charsS, _ := getSparkline(history, width, delay, zoom, nowStale, sampleInterval, latency)
+	charsS, _ := getSparkline(history, nil, width, delay, zoom, nowStale, sampleInterval, latency, 0)
 	resS := string(charsS)
 	if !strings.Contains(resS, "10s") {
 		t.Errorf("stale sparkline should contain age '10s', got %q", resS)
@@ -149,7 +149,7 @@ func TestGetSparklineAdaptiveGap(t *testing.T) {
 	width := 30
 	zoom := 1
 
-	chars, _ := getSparkline(history, width, delay, zoom, now, sampleInterval, 50)
+	chars, _ := getSparkline(history, nil, width, delay, zoom, now, sampleInterval, 0, 0)
 	res := string(chars)
 	
 	// Check continuity between the first and last rendered data point (excluding space)
@@ -181,7 +181,7 @@ func TestGetSparklineLowTraffic(t *testing.T) {
 	now := 102.0
 	sampleInterval := 1.0
 
-	chars, _ := getSparkline(history, width, delay, zoom, now, sampleInterval, 50)
+	chars, _ := getSparkline(history, nil, width, delay, zoom, now, sampleInterval, 0, 0)
 	res := string(chars)
 	
 	// The tiny value at TS=101.0 should map to a pixel before the latency.
@@ -221,11 +221,10 @@ func TestSparklineResolution(t *testing.T) {
 	now := 100.0
 	sampleInterval := 1.0
 
-	chars, _ := getSparkline(history, width, delay, zoom, now, sampleInterval, 0)
+	chars, _ := getSparkline(history, nil, width, delay, zoom, now, sampleInterval, 0, 0)
 	res := string(chars)
 
 	t.Logf("Sparkline: %q", res)
-
 	containsDot := false
 	containsUnderscore := false
 	containsFullBlock := false
@@ -267,7 +266,7 @@ func TestSparklineLevels(t *testing.T) {
 	now := 101.0
 	sampleInterval := 1.0
 
-	chars, _ := getSparkline(history, width, delay, zoom, now, sampleInterval, 0)
+	chars, _ := getSparkline(history, nil, width, delay, zoom, now, sampleInterval, 0, 0)
 	res := string(chars)
 	t.Logf("All levels: %q", res)
 
@@ -281,5 +280,72 @@ func TestSparklineLevels(t *testing.T) {
 	// We expect many different characters
 	if len(uniqueRunes) < 5 {
 		t.Errorf("Expected at least 5 different characters for different levels, got %d: %q", len(uniqueRunes), res)
+	}
+}
+
+func TestSparklineErrors(t *testing.T) {
+	// History with a gap and an error in the middle
+	history := []Sample{
+		{TS: 90.0, Val: 100.0},
+		{TS: 85.0, Val: -1.0}, // SNMP Error
+		{TS: 80.0, Val: 50.0},
+	}
+
+	width := 40
+	delay := 1.0
+	zoom := 1
+	now := 100.0
+	sampleInterval := 1.0
+
+	chars, _ := getSparkline(history, nil, width, delay, zoom, now, sampleInterval, 0, 0)
+	res := string(chars)
+
+	foundError := false
+	for _, r := range chars {
+		if r == '!' {
+			foundError = true
+			break
+		}
+	}
+
+	if !foundError {
+		t.Errorf("Sparkline should contain '!' for error samples (-1.0), got %q", res)
+	}
+}
+
+func TestSparklineDelays(t *testing.T) {
+	// Traffic history
+	history := []Sample{
+		{TS: 90.0, Val: 100.0},
+		{TS: 85.0, Val: 50.0},
+		{TS: 80.0, Val: 20.0},
+	}
+	// Latency history: Val is latency in ms
+	latencies := []Sample{
+		{TS: 85.0, Val: 800.0}, // Slow poll (> 500ms)
+	}
+
+	width := 40
+	delay := 1.0
+	zoom := 1
+	now := 100.0
+	sampleInterval := 1.0
+
+	// We need to update getSparkline signature or use a variant.
+	// For now, let's see if we can highlight it.
+	chars, _ := getSparkline(history, latencies, width, delay, zoom, now, sampleInterval, 0, 500)
+	res := string(chars)
+
+	foundSlow := false
+	for _, r := range chars {
+		// Let's use '*' or similar for slow polls
+		if r == '*' {
+			foundSlow = true
+			break
+		}
+	}
+
+	if !foundSlow {
+		t.Errorf("Sparkline should contain '*' for slow samples (>500ms), got %q", res)
 	}
 }

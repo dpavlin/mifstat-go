@@ -103,10 +103,19 @@ func pollSwitch(sw *SwitchData, delay float64, timeout time.Duration, sem chan s
 		sw.LastPollMs = dur.Milliseconds()
 		sw.TotalPollMs += sw.LastPollMs
 		sw.PollCount++
+		
+		now := float64(t0.UnixNano()) / 1e9
+		sw.LatHist = append(sw.LatHist, Sample{now, float64(sw.LastPollMs)})
+		sw.LatHist = pruneSamples(sw.LatHist, now)
 
 		if err != nil {
 			sw.Status = "WALK_ERR"
 			sw.ErrorCount++
+			now := float64(t0.UnixNano()) / 1e9
+			sw.HistIn = append(sw.HistIn, Sample{now, -1.0})
+			sw.HistOut = append(sw.HistOut, Sample{now, -1.0})
+			sw.HistIn = pruneSamples(sw.HistIn, now)
+			sw.HistOut = pruneSamples(sw.HistOut, now)
 		} else {
 			if len(tables[OID_HCIN]) == 0 {
 				sw.Status = "PARTIAL"

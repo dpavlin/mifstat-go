@@ -338,8 +338,8 @@ func main() {
 					In: sw.In, Out: sw.Out,
 					EmaIn: sw.EmaIn, EmaOut: sw.EmaOut,
 					MaxIn: sw.MaxIn, MaxOut: sw.MaxOut,
-					Hist: hist, SampleInterval: si,
-					LastPollMs: sw.LastPollMs,
+					Hist: hist, LatHist: sw.LatHist, SampleInterval: si,
+					LastPollMs: sw.LastPollMs, SlowMs: *slowMs,
 				})
 			} else {
 				if !matchesFilter(sw.Name, sw.IP, filterLower) {
@@ -361,8 +361,8 @@ func main() {
 							In: r.In, Out: r.Out,
 							EmaIn: r.EmaIn, EmaOut: r.EmaOut,
 							MaxIn: r.MaxIn, MaxOut: r.MaxOut,
-							Hist: hist, SampleInterval: si, Detail: true,
-							LastPollMs: sw.LastPollMs,
+							Hist: hist, LatHist: sw.LatHist, SampleInterval: si, Detail: true,
+							LastPollMs: sw.LastPollMs, SlowMs: *slowMs,
 						})
 					}
 				}
@@ -639,7 +639,7 @@ func renderMain(screen tcell.Screen, items []DisplayItem, h, w int, delay *float
 			numStr := getNumericHistory(item.Hist, dispNow, sparkW, *delay, zoom, item.SampleInterval)
 			drawStr(screen, xSpark, i+1, numStr, defStyle)
 		} else {
-			sparkChars, sparkStale := getSparkline(item.Hist, sparkW, *delay, zoom, dispNow, item.SampleInterval, item.LastPollMs)
+			sparkChars, sparkStale := getSparkline(item.Hist, item.LatHist, sparkW, *delay, zoom, dispNow, item.SampleInterval, item.LastPollMs, item.SlowMs)
 			for k, ch := range sparkChars {
 				if xSpark+k >= w {
 					break

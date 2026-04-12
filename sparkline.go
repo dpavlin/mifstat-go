@@ -11,7 +11,7 @@ var zoomLevels = []int{1, 2, 5, 10, 30, 60, 120}
 
 // getSparkline renders history as block-character sparkline cells.
 // Returns (chars, staleFlags): stale cells should be rendered with dimStyle.
-func getSparkline(history []Sample, width int, delay float64, zoom int, now, sampleInterval float64, lastPollMs int64) (chars []rune, staleFlags []bool) {
+func getSparkline(history, latHistory []Sample, width int, delay float64, zoom int, now, sampleInterval float64, lastPollMs int64, slowMs int64) (chars []rune, staleFlags []bool) {
 	chars = make([]rune, width)
 	staleFlags = make([]bool, width)
 	for i := range chars {
@@ -33,10 +33,33 @@ func getSparkline(history []Sample, width int, delay float64, zoom int, now, sam
 			continue
 		}
 		tb := math.Floor(s.TS/pixelSec) * pixelSec
-		if v, ok := buckets[tb]; !ok || s.Val > v {
+		v, ok := buckets[tb]
+		if !ok {
 			buckets[tb] = s.Val
+		} else {
+			// Special handling for errors: if any sample in bucket is an error, show it as an error.
+			if s.Val == -1.0 || v == -1.0 {
+				buckets[tb] = -1.0
+			} else if s.Val > v {
+				buckets[tb] = s.Val
+			}
 		}
 	}
+
+	// Build latency buckets: true if any poll in that bucket was "slow"
+	slowBuckets := make(map[float64]bool)
+	if slowMs > 0 {
+		for _, s := range latHistory {
+			if s.TS < startTime {
+				continue
+			}
+			if s.Val > float64(slowMs) {
+				tb := math.Floor(s.TS/pixelSec) * pixelSec
+				slowBuckets[tb] = true
+			}
+		}
+	}
+
 	if len(buckets) == 0 {
 		return
 	}
@@ -149,7 +172,14 @@ func getSparkline(history []Sample, width int, delay float64, zoom int, now, sam
 		if idx < 0 { idx = 0 }
 		if idx > numLevels { idx = numLevels }
 		
-		if data[i] == 0 && valid[i] {
+		tp := now - float64(width-1-i)*pixelSec
+		tb := math.Floor(tp/pixelSec) * pixelSec
+		
+		if data[i] == -1.0 {
+			chars[i] = '!'
+		} else if slowBuckets[tb] {
+			chars[i] = '*'
+		} else if data[i] == 0 && valid[i] {
 			chars[i] = ' '
 		} else {
 			chars[i] = blockChars[idx]

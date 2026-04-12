@@ -27,6 +27,7 @@ type SwitchData struct {
 	MaxIn, MaxOut float64
 	HistIn       []Sample
 	HistOut      []Sample
+	LatHist      []Sample
 	PortHist     map[string]*PortHistory
 	Rates        map[string]*PortRate
 	prevCounters map[string][2]uint64
@@ -56,7 +57,9 @@ type DisplayItem struct {
 	EmaIn, EmaOut                  float64
 	MaxIn, MaxOut                  float64
 	Hist                           []Sample
+	LatHist                        []Sample
 	SampleInterval                 float64
 	LastPollMs                     int64
+	SlowMs                         int64
 	Detail                         bool
 }

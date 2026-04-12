@@ -8,6 +8,9 @@
 
 - **Multi-Switch Monitoring**: Polls dozens of switches concurrently using SNMP BulkWalk.
 - **High-Resolution Sparklines**: Vertical history visualization using 10 levels of Unicode characters.
+- **Visual Diagnostics**: Directly see issues in the sparkgraph:
+    - `!`: SNMP Walk Error at that point in time.
+    - `*`: Slow poll (latency exceeded `-slowms` threshold).
 - **TUI Interface**: Interactive terminal UI with sorting, zooming, and dynamic table layouts.
 - **Real-time Filtering**: Instantly filter switches by Name or IP using the `/` key.
 - **Traffic Summary View**: Dedicated numeric view showing Current, 1m Average, and Session Peak traffic.
