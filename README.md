@@ -90,6 +90,7 @@ See `examples/switches.txt.sample` for more details.
 - `-state string`: Path to save history state (default `/tmp/mifstat_go.bin`).
 - `-d float`: Poll interval in seconds (default `1.0`).
 - `-snmptimeout duration`: SNMP timeout per poll (default `3s`).
+- `-hist float`: History duration in hours (default `6.0`).
 - `-log string`: Path to log SNMP errors and performance.
 - `-bench`: Run benchmark mode and exit.
 - `-slowms int`: Log polls slower than this many milliseconds (defaults to poll interval `-d * 1000`). Use `0` to disable.

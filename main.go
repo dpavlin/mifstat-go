@@ -97,7 +97,10 @@ func main() {
 	swFile := flag.String("f", "/dev/shm/sw-ip-name-mac", "switch list file (IP NAME [MAC])")
 	stateFile := flag.String("state", "/tmp/mifstat_go.bin", "state file to save history")
 	vFlag := flag.Bool("version", false, "show version and exit")
+	histHours := flag.Float64("hist", 6.0, "history duration in hours")
 	flag.Parse()
+
+	MAX_HIST_SEC = (*histHours) * 3600.0
 
 	slowMsSet := false
 	flag.Visit(func(f *flag.Flag) {
@@ -161,6 +164,7 @@ func main() {
 		if saved.HistIn != nil {
 			sd.HistIn = saved.HistIn[sw["ip"]]
 			sd.HistOut = saved.HistOut[sw["ip"]]
+			sd.LatHist = saved.LatHist[sw["ip"]]
 			if ph := saved.PortHist[sw["ip"]]; ph != nil {
 				sd.PortHist = ph
 			}

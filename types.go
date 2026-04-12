@@ -8,7 +8,7 @@ import (
 // Sample is a (timestamp, value) data point for history sparklines.
 type Sample struct{ TS, Val float64 }
 
-const MAX_HIST_SEC = 21600.0 // 6 hours
+var MAX_HIST_SEC = 21600.0 // 6 hours default
 
 type PortHistory struct{ In, Out []Sample }
 
@@ -48,6 +48,7 @@ type SwitchData struct {
 type SaveState struct {
 	HistIn   map[string][]Sample
 	HistOut  map[string][]Sample
+	LatHist  map[string][]Sample
 	PortHist map[string]map[string]*PortHistory
 }
 
