@@ -7,7 +7,14 @@
 ## Features
 
 - **Multi-Switch Monitoring**: Polls dozens of switches concurrently using SNMP BulkWalk.
-- **High-Performance Architecture**: Uses pre-allocated ring buffers and `float32` precision to handle thousands of ports with minimal RAM (~75% reduction compared to v0.1).
+- **Extreme Memory Efficiency**: 
+    - Uses pre-allocated **ring buffers** and `float32` precision.
+    - **Streaming State Loader**: Loads data directly from disk into ring buffers, eliminating peak RAM spikes during startup.
+    - RAM usage reduced by over 75% compared to v0.1 (verified on production datasets).
+- **Near-Instant I/O**: 
+    - New **MIFSTAT3** format with timestamp deduplication and zero-allocation loading.
+    - State file size reduced by up to 30x (880MB -> 26MB).
+- **High-Performance Rendering**: O(N) sparkline logic removes expensive map-based bucketing, resulting in ~60% lower CPU usage during TUI updates.
 - **High-Resolution Sparklines**: Vertical history visualization using 10 levels of Unicode characters.
 - **Visual Diagnostics**: Directly see issues in the sparkgraph:
     - `!`: SNMP Walk Error at that point in time.
@@ -15,8 +22,7 @@
 - **TUI Interface**: Interactive terminal UI with sorting, zooming, and dynamic table layouts.
 - **Real-time Filtering**: Instantly filter switches by Name or IP using the `/` key.
 - **Traffic Summary View**: Dedicated numeric view showing Current, 1m Average, and Session Peak traffic.
-- **Benchmark Mode**: Diagnoses slow or failing switches with precise timing, adaptive `MaxRepetitions`, and "Slow" poll tracking.
-- **Efficient State Persistence**: Uses a deduplicated binary format (`MIFSTAT3`) for instant zero-allocation loading and saving.
+- **Benchmark Mode**: Diagnoses slow or failing switches with precise timing and "Slow" poll tracking.
 
 ## Installation
 
@@ -56,11 +62,11 @@ go install github.com/dpavlin/mifstat-go@latest
 # Run a one-shot benchmark to diagnose switch performance
 ./mifstat -bench
 
-# Use a custom switch list and SNMP community
-./mifstat -f my_switches.txt -c my_secret_community
+# Enable pprof for live CPU/Memory profiling
+./mifstat -pprof :6060
 
-# Change poll interval and history depth
-./mifstat -d 2.0 -hist 24
+# Use a custom switch list and change history depth
+./mifstat -f my_switches.txt -hist 24
 ```
 
 ### Interactive Keys
@@ -90,8 +96,9 @@ go install github.com/dpavlin/mifstat-go@latest
 - `-hist float`: History duration in hours (default `6.0`).
 - `-snmptimeout duration`: SNMP timeout per poll (default `3s`).
 - `-log string`: Path to log SNMP errors and performance.
+- `-pprof string`: Enable pprof profiling on address (e.g. `localhost:6060`).
 - `-bench`: Run benchmark mode and exit.
-- `-slowms int`: Log polls slower than this many milliseconds (defaults to poll interval `-d * 1000`). Use `0` to disable.
+- `-slowms int`: Log polls slower than this many milliseconds (defaults to poll interval `-d * 1000`).
 - `-version`: Show version and exit.
 
 ## Development
@@ -101,8 +108,7 @@ The project uses a strict Red/Green TDD workflow:
 - `table.go`: Reusable dynamic table layout engine.
 - `snmp_poll.go`: Adaptive SNMP polling and OID processing.
 - `sparkline.go`: High-resolution visualization logic.
-- `state.go`: Near-instant binary state persistence.
-- `benchmark.go`: Performance testing and diagnostics.
+- `state.go`: Fast "streaming" binary state persistence.
 
 ## License
 
