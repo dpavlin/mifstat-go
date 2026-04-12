@@ -1,7 +1,7 @@
 # mifstat Makefile
 
 BINARY_NAME=mifstat
-VERSION=0.1.0
+VERSION=0.2.0
 BUILD_OPTS=-ldflags="-s -w"
 
 .PHONY: all build clean release test

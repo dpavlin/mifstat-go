@@ -1,4 +1,7 @@
 mifstat-bin
 mifstat
 /tmp/mifstat_go.bin
+mifstat_go.bin
 *.log
+*.png
+dist/

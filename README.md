@@ -7,12 +7,13 @@
 ## Features
 
 - **Multi-Switch Monitoring**: Polls dozens of switches concurrently using SNMP BulkWalk.
-- **Real-time Sparklines**: High-resolution history visualization using Unicode block characters.
-- **TUI Interface**: Interactive terminal UI with sorting, zooming, and detailed port views.
-- **Benchmark Mode**: Diagnoses slow or failing switches with precise timing information.
+- **High-Resolution Sparklines**: Vertical history visualization using 10 levels of Unicode characters.
+- **TUI Interface**: Interactive terminal UI with sorting, zooming, and dynamic table layouts.
+- **Real-time Filtering**: Instantly filter switches by Name or IP using the `/` key.
+- **Traffic Summary View**: Dedicated numeric view showing Current, 1m Average, and Session Peak traffic.
+- **Benchmark Mode**: Diagnoses slow or failing switches with precise timing and adaptive `MaxRepetitions`.
 - **State Persistence**: Saves history between restarts to maintain continuity.
-- **Efficient**: Single binary, no external dependencies (except Go runtime for building).
-- **Flexible Configuration**: Supports comment lines in switch lists and customizable SNMP communities.
+- **Efficient**: Single binary, adaptive SNMP engine to minimize network overhead.
 
 ## Installation
 
@@ -51,7 +52,7 @@ See `examples/switches.txt.sample` for more details.
 # Start the TUI
 ./mifstat
 
-# Run a one-shot benchmark
+# Run a one-shot benchmark to diagnose switch performance
 ./mifstat -bench
 
 # Use a custom switch list and SNMP community
@@ -64,16 +65,20 @@ See `examples/switches.txt.sample` for more details.
 ### Interactive Keys
 
 - `q`: Quit
+- `/`: Filter switches by Name/IP (Esc to clear, Enter to apply)
 - `d`: Toggle detailed port view
-- `p`: Toggle performance metrics
-- `i`: Sort by IN traffic
-- `o`: Sort by OUT traffic
-- `1`: Sort by IP
-- `2`: Sort by Name
+- `p`: Toggle performance metrics (SNMP latency, Errors, MRep)
+- `t`: Toggle numeric traffic summary (Current, Average, Peak)
+- `v`: Toggle sparklines vs. numeric timeline
+- `i` / `o`: Sort by IN / OUT traffic
+- `1` / `a`: Sort by IP
+- `2` / `n`: Sort by Name
+- `3` / `s`: Sort by Status (Down/Error switches at the top)
+- `Space`: Toggle auto-sort (freeze view)
 - `+` / `-`: Zoom in/out on sparklines
 - `Left` / `Right`: Scroll through history
+- `PgUp` / `PgDn`: Scroll history by page
 - `Enter`: Reset scroll to now
-- `Space`: Toggle auto-sort (freeze view)
 
 ## Configuration Options
 
@@ -89,10 +94,10 @@ See `examples/switches.txt.sample` for more details.
 
 ## Development
 
-The project is split into several modules for easier maintenance:
+The project uses TDD for critical components:
 - `main.go`: Entry point, TUI loop, and flags.
-- `types.go`: Struct definitions and common types.
-- `snmp_poll.go`: SNMP polling and OID processing.
+- `table.go`: Reusable dynamic table layout engine.
+- `snmp_poll.go`: Adaptive SNMP polling and OID processing.
 - `sparkline.go`: High-resolution visualization logic.
 - `state.go`: Binary history persistence.
 - `benchmark.go`: Performance testing and diagnostics.
