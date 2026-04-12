@@ -18,7 +18,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 )
 
-const version = "0.2.0"
+const version = "0.3.0"
 
 var (
 	snmpCommunity string
