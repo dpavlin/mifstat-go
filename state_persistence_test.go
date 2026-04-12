@@ -70,3 +70,12 @@ func TestSaveLoadState(t *testing.T) {
 		t.Errorf("PortHist In mismatch")
 	}
 }
+
+func TestLoadStateMissing(t *testing.T) {
+	// Loading non-existent file should just return without crash
+	s := &SwitchData{IP: "1.1.1.1"}
+	loadState("/non/existent/path/mifstat.bin", []*SwitchData{s})
+	if s.Timestamps.Len != 0 {
+		t.Errorf("expected empty ring for missing file")
+	}
+}
