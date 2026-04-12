@@ -127,7 +127,7 @@ func main() {
 	sem := make(chan struct{}, 50)
 
 	if *bench {
-		runBenchmark(switches, sem)
+		runBenchmark(switches, sem, *slowMs)
 		return
 	}
 

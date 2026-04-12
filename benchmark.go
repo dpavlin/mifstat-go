@@ -11,7 +11,7 @@ import (
 )
 
 // runBenchmark polls all switches multiple times concurrently and prints a timing table.
-func runBenchmark(switches []map[string]string, sem chan struct{}) {
+func runBenchmark(switches []map[string]string, sem chan struct{}, slowMs int64) {
 	const iterations = 5
 	type stats struct {
 		min, max, total int64
@@ -26,6 +26,7 @@ func runBenchmark(switches []map[string]string, sem chan struct{}) {
 		IfaceCount int
 		OIDRows    int
 		MaxRep     uint32
+		SlowCount  int
 	}
 
 	results := make([]Result, len(switches))
@@ -117,6 +118,10 @@ func runBenchmark(switches []map[string]string, sem chan struct{}) {
 				if snmpMs > r.Snmp.max { r.Snmp.max = snmpMs }
 				r.OIDRows = len(tables[OID_HCIN])
 				
+				if slowMs > 0 && snmpMs > slowMs {
+					r.SlowCount++
+				}
+				
 				if iter < iterations-1 {
 					time.Sleep(100 * time.Millisecond)
 				}
@@ -135,18 +140,18 @@ func runBenchmark(switches []map[string]string, sem chan struct{}) {
 		if len(r.Name) > bwName { bwName = len(r.Name) }
 	}
 
-	fmt.Printf("Benchmark: %d switches | samples: %d | wall: %v | semaphore: 50\n\n",
-		len(switches), iterations, wall.Round(time.Millisecond))
-	fmt.Printf("%-*s %-*s %-*s %7s %7s %7s %5s %6s %4s\n",
+	fmt.Printf("Benchmark: %d switches | samples: %d | wall: %v | semaphore: 50 | slow threshold: %dms\n\n",
+		len(switches), iterations, wall.Round(time.Millisecond), slowMs)
+	fmt.Printf("%-*s %-*s %-*s %7s %7s %7s %5s %6s %4s %4s\n",
 		bwIP, "IP", bwName, "Name", bwStatus, "Status",
-		"AvgMs", "MaxMs", "Jitter", "Phys", "Ifaces", "MRep")
-	fmt.Println(strings.Repeat("-", bwIP+bwName+bwStatus+1+7+1+7+1+7+1+5+1+6+1+4+6))
+		"AvgMs", "MaxMs", "Jitter", "Phys", "Ifaces", "MRep", "Slow")
+	fmt.Println(strings.Repeat("-", bwIP+bwName+bwStatus+1+7+1+7+1+7+1+5+1+6+1+4+1+4+7))
 
 	for _, r := range results {
 		avg := r.Snmp.total / iterations
 		jitter := r.Snmp.max - r.Snmp.min
-		fmt.Printf("%-*s %-*s %-*s %7d %7d %7d %5d %6d %4d\n",
+		fmt.Printf("%-*s %-*s %-*s %7d %7d %7d %5d %6d %4d %4d\n",
 			bwIP, r.IP, bwName, r.Name, bwStatus, r.Status,
-			avg, r.Snmp.max, jitter, r.PhysPorts, r.IfaceCount, r.MaxRep)
+			avg, r.Snmp.max, jitter, r.PhysPorts, r.IfaceCount, r.MaxRep, r.SlowCount)
 	}
 }

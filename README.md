@@ -14,7 +14,7 @@
 - **TUI Interface**: Interactive terminal UI with sorting, zooming, and dynamic table layouts.
 - **Real-time Filtering**: Instantly filter switches by Name or IP using the `/` key.
 - **Traffic Summary View**: Dedicated numeric view showing Current, 1m Average, and Session Peak traffic.
-- **Benchmark Mode**: Diagnoses slow or failing switches with precise timing and adaptive `MaxRepetitions`.
+- **Benchmark Mode**: Diagnoses slow or failing switches with precise timing, adaptive `MaxRepetitions`, and a count of "Slow" polls exceeding the threshold.
 - **State Persistence**: Saves history between restarts to maintain continuity.
 - **Efficient**: Single binary, adaptive SNMP engine to minimize network overhead.
 
