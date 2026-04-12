@@ -247,7 +247,11 @@ func pruneSamples(s []Sample, now float64) []Sample {
 	return s
 }
 
-func bulkWalkMulti(conn *gosnmp.GoSNMP, baseOIDs []string, maxRep uint32) (map[string]map[int]uint64, error) {
+type SnmpClient interface {
+	GetBulk(oids []string, nonRepeaters uint8, maxRepetitions uint32) (*gosnmp.SnmpPacket, error)
+}
+
+func bulkWalkMulti(conn SnmpClient, baseOIDs []string, maxRep uint32) (map[string]map[int]uint64, error) {
 	n := len(baseOIDs)
 	result := make(map[string]map[int]uint64, n)
 	prefixes := make([]string, n)

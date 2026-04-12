@@ -44,3 +44,15 @@ func TestCalcEMA(t *testing.T) {
 		}
 	}
 }
+
+func TestMin(t *testing.T) {
+	if min(1, 2) != 1 {
+		t.Errorf("min(1, 2) = %d; want 1", min(1, 2))
+	}
+	if min(2, 1) != 1 {
+		t.Errorf("min(2, 1) = %d; want 1", min(2, 1))
+	}
+	if min(1, 1) != 1 {
+		t.Errorf("min(1, 1) = %d; want 1", min(1, 1))
+	}
+}
